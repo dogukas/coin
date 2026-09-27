@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # Binance endpoints
     BINANCE_REST_URL: str = "https://data-api.binance.vision"
-    BINANCE_WS_URL: str = "wss://stream.binance.com:9443/ws"
+    BINANCE_WS_URL: str = "wss://data-stream.binance.vision/ws"
 
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./candles.db"
