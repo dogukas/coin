@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     BINANCE_API_SECRET: str = ""
 
     # Binance endpoints
-    BINANCE_REST_URL: str = "https://api.binance.com"
+    BINANCE_REST_URL: str = "https://data-api.binance.vision"
     BINANCE_WS_URL: str = "wss://stream.binance.com:9443/ws"
 
     # Database
