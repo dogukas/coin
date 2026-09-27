@@ -131,7 +131,7 @@ export default function GlobalMarketPanel() {
                 <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors drop-shadow-sm">{coin}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded shadow-sm">+{Math.floor(Math.random() * 15 + 1)}%</span>
+                <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded shadow-sm">+{1 + (idx * 3)}%</span>
               </div>
             </div>
           ))}
