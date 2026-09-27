@@ -1,7 +1,7 @@
 // Zustand state management for the crypto dashboard
 
 import { create } from "zustand";
-import type { CandleData, SignalPayload, SymbolInfo } from "./utils";
+import type { CandleData, SignalPayload, SymbolInfo, TradeData } from "./utils";
 
 // ──────────────────────────────────────────────
 // Store Interface

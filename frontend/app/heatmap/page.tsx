@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Map, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Map as MapIcon, Loader2, RefreshCw } from "lucide-react";
 import { SymbolInfo, API_URL } from "@/lib/utils";
 
 interface HeatmapCoin extends SymbolInfo {
@@ -21,10 +21,10 @@ export default function HeatmapPage() {
         const data = await res.json();
         // Combine popular, gainers, losers into one unique list
         const allCoins = [...data.popular, ...data.gainers, ...data.losers];
-        const unique = Array.from(new Map(allCoins.map(item => [item.symbol, item])).values());
+        const unique = Array.from(new Map(allCoins.map((item: HeatmapCoin) => [item.symbol, item])).values()) as HeatmapCoin[];
         
         // Sort by volume descending
-        unique.sort((a, b) => b.volume_usd - a.volume_usd);
+        unique.sort((a: HeatmapCoin, b: HeatmapCoin) => b.volume_usd - a.volume_usd);
         
         // Take top 60 for the heatmap
         setCoins(unique.slice(0, 60));
@@ -74,7 +74,7 @@ export default function HeatmapPage() {
           </Link>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-fuchsia-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
-              <Map size={20} className="text-white" />
+              <MapIcon size={20} className="text-white" />
             </div>
             <div>
               <h1 className="text-lg font-bold">Piyasa Isı Haritası</h1>
