@@ -4,7 +4,7 @@
 
 import { useEffect } from "react";
 import { useDashboardStore } from "@/lib/store";
-import { formatPrice, formatPercent } from "@/lib/utils";
+import { formatPrice, formatPercent, API_URL } from "@/lib/utils";
 import type { SymbolInfo } from "@/lib/utils";
 
 // Symbol display configs
@@ -24,7 +24,7 @@ export default function Watchlist() {
   useEffect(() => {
     const fetchPrices = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/symbols");
+        const res = await fetch(`${API_URL}/api/symbols`);
         if (res.ok) {
           const data: SymbolInfo[] = await res.json();
           setSymbols(data);

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Map, Loader2, RefreshCw } from "lucide-react";
-import { SymbolInfo } from "@/lib/utils";
+import { SymbolInfo, API_URL } from "@/lib/utils";
 
 interface HeatmapCoin extends SymbolInfo {
   volume_usd: number;
@@ -16,7 +16,7 @@ export default function HeatmapPage() {
   const fetchHeatmap = async () => {
     try {
       setLoading(true);
-      const res = await fetch("http://localhost:8000/api/market/overview?limit=100");
+      const res = await fetch(`${API_URL}/api/market/overview?limit=100`);
       if (res.ok) {
         const data = await res.json();
         // Combine popular, gainers, losers into one unique list

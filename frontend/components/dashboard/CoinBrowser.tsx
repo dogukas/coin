@@ -5,7 +5,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useDashboardStore } from "@/lib/store";
-import { formatPrice, formatPercent } from "@/lib/utils";
+import { formatPrice, formatPercent, API_URL } from "@/lib/utils";
 import type { MarketCoin, MarketOverview } from "@/lib/utils";
 import {
   Search,
@@ -44,7 +44,7 @@ export default function CoinBrowser() {
   // Fetch market overview
   const fetchOverview = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/market/overview?limit=30");
+      const res = await fetch(`${API_URL}/api/market/overview?limit=30`);
       if (res.ok) {
         const data: MarketOverview = await res.json();
         setOverview(data);
@@ -66,7 +66,7 @@ export default function CoinBrowser() {
   const fetchStrongBuys = useCallback(async () => {
     try {
       setIsLoading(true);
-      const res = await fetch("http://localhost:8000/api/market/strong-buys?limit=20");
+      const res = await fetch(`${API_URL}/api/market/strong-buys?limit=20`);
       if (res.ok) {
         const data: MarketCoin[] = await res.json();
         setStrongBuys(data);
@@ -99,7 +99,7 @@ export default function CoinBrowser() {
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const res = await fetch(
-          `http://localhost:8000/api/market/search?q=${encodeURIComponent(searchQuery)}&limit=20`
+          `${API_URL}/api/market/search?q=${encodeURIComponent(searchQuery)}&limit=20`
         );
         if (res.ok) {
           const data: MarketCoin[] = await res.json();

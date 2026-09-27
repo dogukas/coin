@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2, LayoutGrid, Flame, ArrowUpRight, ArrowDownRight, Activity } from "lucide-react";
-import { TACubeData, getSignalColor, formatPrice, getSignalLevel } from "@/lib/utils";
+import { TACubeData, getSignalColor, formatPrice, getSignalLevel, API_URL } from "@/lib/utils";
 
 export default function ScreenerPage() {
   const [cubes, setCubes] = useState<TACubeData[]>([]);
@@ -17,7 +17,7 @@ export default function ScreenerPage() {
   const fetchCubes = async () => {
     try {
       setLoading(true);
-      const res = await fetch("http://localhost:8000/api/market/ta-cubes?limit=24");
+      const res = await fetch(`${API_URL}/api/market/ta-cubes?limit=24`);
       if (res.ok) {
         const data = await res.json();
         setCubes(data);
