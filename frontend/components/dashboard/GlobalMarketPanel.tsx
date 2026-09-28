@@ -1,40 +1,34 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { TrendingUp, TrendingDown, Flame, BarChart3, Activity } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { TrendingUp, TrendingDown, Flame, BarChart3, Activity, Loader2 } from "lucide-react";
 import { useDashboardStore } from "@/lib/store";
+import { API_URL } from "@/lib/utils";
+
+interface PressureBar {
+  time: number;
+  buy_volume: number;
+  sell_volume: number;
+  buy_pct: number;
+}
+
+interface TrendingCoin {
+  symbol: string;
+  change_24h: number;
+  volume_usd: number;
+}
 
 export default function GlobalMarketPanel() {
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   
   const [fearGreed, setFearGreed] = useState<{ value: number; classification: string }>({
-    value: 72,
-    classification: "Greed",
+    value: 50,
+    classification: "Neutral",
   });
 
-  // Mock data for liquidations chart based on selected symbol
-  const liqData = useMemo(() => {
-    // Deterministic random based on symbol length + char code
-    const seedBase = activeSymbol.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return Array.from({ length: 24 }).map((_, i) => {
-      // Create a pseudo-random value that changes per symbol but stays stable for the same symbol
-      const noiseLong = Math.sin(seedBase + i) * 3 + 3; // 0 to 6
-      const noiseShort = Math.cos(seedBase + i) * 3 + 3; // 0 to 6
-      
-      // If BTC or ETH, scale it up
-      const multiplier = activeSymbol === "BTCUSDT" || activeSymbol === "ETHUSDT" ? 10 : 1;
-      
-      return {
-        long: (noiseLong * multiplier) + 0.1,
-        short: (noiseShort * multiplier) + 0.1,
-      };
-    });
-  }, [activeSymbol]);
-  
-  const totalLong = liqData.reduce((acc, curr) => acc + curr.long, 0);
-  const totalShort = liqData.reduce((acc, curr) => acc + curr.short, 0);
-  const totalLiq = totalLong + totalShort;
-  const maxBarVal = Math.max(...liqData.map(d => Math.max(d.long, d.short)));
+  const [pressureData, setPressureData] = useState<PressureBar[]>([]);
+  const [pressureLoading, setPressureLoading] = useState(false);
+  const [trendingCoins, setTrendingCoins] = useState<TrendingCoin[]>([]);
 
   // Fetch real Fear & Greed index
   useEffect(() => {
@@ -48,8 +42,58 @@ export default function GlobalMarketPanel() {
           });
         }
       })
-      .catch(() => {}); // Fallback to mock
+      .catch(() => {}); // Fallback to default
   }, []);
+
+  // Fetch real taker buy/sell pressure from backend
+  const fetchPressure = useCallback(async () => {
+    setPressureLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/market/buy-sell-pressure/${activeSymbol}?limit=24`);
+      if (res.ok) {
+        const data: PressureBar[] = await res.json();
+        setPressureData(data);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setPressureLoading(false);
+    }
+  }, [activeSymbol]);
+
+  useEffect(() => {
+    fetchPressure();
+    const interval = setInterval(fetchPressure, 60000); // Refresh every 60s
+    return () => clearInterval(interval);
+  }, [fetchPressure]);
+
+  // Fetch trending coins (top gainers)
+  useEffect(() => {
+    fetch(`${API_URL}/api/market/overview?limit=5`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.gainers) {
+          setTrendingCoins(data.gainers.slice(0, 4));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Calculate totals from real data
+  const totalBuy = pressureData.reduce((acc, curr) => acc + curr.buy_volume, 0);
+  const totalSell = pressureData.reduce((acc, curr) => acc + curr.sell_volume, 0);
+  const totalVol = totalBuy + totalSell;
+  const maxBarVal = pressureData.length > 0
+    ? Math.max(...pressureData.map(d => Math.max(d.buy_volume, d.sell_volume)))
+    : 1;
+
+  // Format volume for display
+  const formatVol = (v: number): string => {
+    if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(1)}B`;
+    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
+    return v.toFixed(0);
+  };
 
   // Calculate Fear/Greed gauge rotation (-90deg to 90deg)
   const fgRotation = (fearGreed.value / 100) * 180 - 90;
@@ -103,82 +147,119 @@ export default function GlobalMarketPanel() {
           
           <div className="flex-1 space-y-3">
             <div className="flex flex-col">
-              <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Korku & Açgözlülük</span>
+              <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Korku &amp; Açgözlülük</span>
               <span className="text-sm font-black drop-shadow-sm" style={{ color: fgColor }}>{fearGreed.classification}</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Global Hacim (24s)</span>
-              <span className="text-sm font-bold text-white drop-shadow-sm">$64.2B <span className="text-emerald-400 text-[10px] ml-1 bg-emerald-500/10 px-1 py-0.5 rounded shadow-sm">+5.4%</span></span>
+              <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">24s Alıcı Oranı</span>
+              <span className="text-sm font-bold text-white drop-shadow-sm">
+                {pressureData.length > 0 
+                  ? `%${(totalBuy / (totalVol || 1) * 100).toFixed(1)}`
+                  : "—"
+                }
+                {totalBuy > totalSell ? (
+                  <span className="text-emerald-400 text-[10px] ml-1 bg-emerald-500/10 px-1 py-0.5 rounded shadow-sm">ALICI GÜÇLÜ</span>
+                ) : totalSell > totalBuy ? (
+                  <span className="text-red-400 text-[10px] ml-1 bg-red-500/10 px-1 py-0.5 rounded shadow-sm">SATICI GÜÇLÜ</span>
+                ) : null}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 2. Trending Coins */}
+      {/* 2. Trending Coins (Real Data) */}
       <div className="glass-card rounded-2xl p-4 flex flex-col justify-between transition-all hover:border-white/20">
         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2 mb-3 drop-shadow-md">
           <Flame size={14} className="text-orange-400 drop-shadow-[0_0_5px_rgba(251,146,60,0.5)]" />
-          Trend Olanlar (24S)
+          En Çok Yükselenler (24S)
         </h3>
         <div className="space-y-2">
-          {['BTC', 'SOL', 'PEPE', 'WIF'].map((coin, idx) => (
-            <div key={coin} className="flex items-center justify-between group cursor-pointer hover:bg-white/5 px-2 py-1 -mx-2 rounded-lg transition-colors">
-              <div className="flex items-center gap-2.5">
-                <span className="text-[10px] text-gray-500 font-black w-3">{idx + 1}</span>
-                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-white/10 to-white/5 border border-white/10 flex items-center justify-center text-[8px] font-bold text-gray-300 group-hover:text-white transition-colors shadow-inner">
-                  {coin.slice(0,2)}
+          {trendingCoins.length > 0 ? trendingCoins.map((coin, idx) => {
+            const baseName = coin.symbol.replace("USDT", "");
+            const isPositive = coin.change_24h >= 0;
+            return (
+              <div key={coin.symbol} className="flex items-center justify-between group cursor-pointer hover:bg-white/5 px-2 py-1 -mx-2 rounded-lg transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[10px] text-gray-500 font-black w-3">{idx + 1}</span>
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-br from-white/10 to-white/5 border border-white/10 flex items-center justify-center text-[8px] font-bold text-gray-300 group-hover:text-white transition-colors shadow-inner">
+                    {baseName.slice(0,2)}
+                  </div>
+                  <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors drop-shadow-sm">{baseName}</span>
                 </div>
-                <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors drop-shadow-sm">{coin}</span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded shadow-sm ${
+                    isPositive 
+                      ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20" 
+                      : "text-red-400 bg-red-500/10 border border-red-500/20"
+                  }`}>
+                    {isPositive ? "+" : ""}{coin.change_24h.toFixed(2)}%
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded shadow-sm">+{1 + (idx * 3)}%</span>
-              </div>
+            );
+          }) : (
+            <div className="text-center text-xs text-gray-600 py-4">
+              <Loader2 size={14} className="animate-spin mx-auto mb-1" />
+              Yükleniyor...
             </div>
-          ))}
+          )}
         </div>
       </div>
 
-      {/* 3. Derivatives (Liquidations) */}
+      {/* 3. Real Taker Buy vs Sell Volume (24h) */}
       <div className="glass-card rounded-2xl p-4 flex flex-col justify-between transition-all hover:border-white/20 relative overflow-hidden group">
         <div className="absolute -top-10 -right-10 w-20 h-20 rounded-full blur-[40px] opacity-0 group-hover:opacity-10 transition-opacity duration-700 pointer-events-none bg-blue-500" />
         
         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center justify-between mb-3 drop-shadow-md">
           <div className="flex items-center gap-2">
             <BarChart3 size={14} className="text-blue-400" />
-            Likitasyonlar ({activeSymbol.replace("USDT", "")})
+            Alıcı / Satıcı ({activeSymbol.replace("USDT", "")})
           </div>
-          <span className="text-[10px] font-black tabular-nums bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-gray-300 drop-shadow-sm">${totalLiq.toFixed(1)}M</span>
+          <span className="text-[10px] font-black tabular-nums bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-gray-300 drop-shadow-sm">
+            ${formatVol(totalVol)}
+          </span>
         </h3>
         
         <div className="flex items-center justify-between text-[10px] font-black mb-3">
           <div className="flex items-center gap-1.5 bg-emerald-500/5 border border-emerald-500/10 px-2 py-1 rounded shadow-sm">
-            <span className="text-gray-500 uppercase">Long:</span>
-            <span className="text-emerald-400 drop-shadow-sm">${totalLong.toFixed(1)}M</span>
+            <span className="text-gray-500 uppercase">Alıcı:</span>
+            <span className="text-emerald-400 drop-shadow-sm">${formatVol(totalBuy)}</span>
           </div>
           <div className="flex items-center gap-1.5 bg-red-500/5 border border-red-500/10 px-2 py-1 rounded shadow-sm">
-            <span className="text-gray-500 uppercase">Short:</span>
-            <span className="text-red-400 drop-shadow-sm">${totalShort.toFixed(1)}M</span>
+            <span className="text-gray-500 uppercase">Satıcı:</span>
+            <span className="text-red-400 drop-shadow-sm">${formatVol(totalSell)}</span>
           </div>
         </div>
 
         {/* Mirrored Bar Chart */}
-        <div className="flex items-center gap-[3px] h-14 w-full mt-auto relative">
-          <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-white/10 -translate-y-1/2" />
-          {liqData.map((data, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center justify-center gap-[1px] h-full z-10 hover:opacity-80 cursor-crosshair transition-opacity">
-              {/* Longs (Top) */}
-              <div 
-                className="w-full bg-gradient-to-t from-emerald-500/80 to-emerald-400 rounded-t-sm shadow-[0_0_5px_rgba(16,185,129,0.3)]" 
-                style={{ height: `${(data.long / maxBarVal) * 50}%`, marginBottom: '1px' }}
-              />
-              {/* Shorts (Bottom) */}
-              <div 
-                className="w-full bg-gradient-to-b from-red-500/80 to-red-400 rounded-b-sm shadow-[0_0_5px_rgba(239,68,68,0.3)]" 
-                style={{ height: `${(data.short / maxBarVal) * 50}%`, marginTop: '1px' }}
-              />
-            </div>
-          ))}
-        </div>
+        {pressureLoading ? (
+          <div className="flex items-center justify-center h-14">
+            <Loader2 size={16} className="text-gray-600 animate-spin" />
+          </div>
+        ) : pressureData.length > 0 ? (
+          <div className="flex items-center gap-[3px] h-14 w-full mt-auto relative">
+            <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-white/10 -translate-y-1/2" />
+            {pressureData.map((data, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center justify-center gap-[1px] h-full z-10 hover:opacity-80 cursor-crosshair transition-opacity"
+                title={`Alıcı: $${formatVol(data.buy_volume)} | Satıcı: $${formatVol(data.sell_volume)} | %${data.buy_pct.toFixed(1)} Alım`}
+              >
+                {/* Buy Volume (Top - Green) */}
+                <div 
+                  className="w-full bg-gradient-to-t from-emerald-500/80 to-emerald-400 rounded-t-sm shadow-[0_0_5px_rgba(16,185,129,0.3)]" 
+                  style={{ height: `${(data.buy_volume / maxBarVal) * 50}%`, marginBottom: '1px' }}
+                />
+                {/* Sell Volume (Bottom - Red) */}
+                <div 
+                  className="w-full bg-gradient-to-b from-red-500/80 to-red-400 rounded-b-sm shadow-[0_0_5px_rgba(239,68,68,0.3)]" 
+                  style={{ height: `${(data.sell_volume / maxBarVal) * 50}%`, marginTop: '1px' }}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center text-[10px] text-gray-600 py-4">Veri bekleniyor...</div>
+        )}
       </div>
 
     </div>

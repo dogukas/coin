@@ -239,3 +239,39 @@ async def get_ta_cubes(limit: int = Query(default=24, ge=1, le=50)):
             results.append(res)
             
     return results
+
+
+@router.get("/market/buy-sell-pressure/{symbol}")
+async def get_buy_sell_pressure(
+    symbol: str,
+    limit: int = Query(default=24, ge=1, le=48, description="Number of hourly candles"),
+):
+    """
+    Fetch real Taker Buy vs Sell volume from Binance hourly klines.
+    Returns list of {hour, buy_volume, sell_volume} for the last N hours.
+    This represents actual market pressure — not mock data.
+    """
+    symbol = symbol.upper()
+    candles = await binance_service.fetch_klines(symbol, "1h", limit=limit)
+    if not candles:
+        return []
+
+    result = []
+    for c in candles:
+        total_vol = c["volume"]
+        taker_buy = c.get("taker_buy_volume", 0)
+        taker_sell = total_vol - taker_buy
+
+        # Convert to USDT value using average price
+        avg_price = (c["open"] + c["close"]) / 2
+        buy_usd = taker_buy * avg_price
+        sell_usd = taker_sell * avg_price
+
+        result.append({
+            "time": c["open_time"],
+            "buy_volume": round(buy_usd, 2),
+            "sell_volume": round(sell_usd, 2),
+            "buy_pct": round((taker_buy / total_vol) * 100, 2) if total_vol > 0 else 50,
+        })
+
+    return result
