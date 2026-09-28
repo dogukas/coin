@@ -1,6 +1,8 @@
 // Zustand state management for the crypto dashboard
+// With localStorage persistence for user preferences
 
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { CandleData, SignalPayload, SymbolInfo, TradeData } from "./utils";
 
 // ──────────────────────────────────────────────
@@ -8,14 +10,14 @@ import type { CandleData, SignalPayload, SymbolInfo, TradeData } from "./utils";
 // ──────────────────────────────────────────────
 
 interface DashboardState {
-  // Active symbol & interval
+  // Active symbol & interval (persisted)
   activeSymbol: string;
   activeInterval: string;
 
   // Connection status
   wsConnected: boolean;
 
-  // Market data
+  // Market data (not persisted)
   candles: CandleData[];
   signalData: SignalPayload | null;
   trades: TradeData[];
@@ -35,82 +37,94 @@ interface DashboardState {
 }
 
 // ──────────────────────────────────────────────
-// Store
+// Store with persistence
 // ──────────────────────────────────────────────
 
-export const useDashboardStore = create<DashboardState>((set, get) => ({
-  // Initial state
-  activeSymbol: "BTCUSDT",
-  activeInterval: "15m",
-  wsConnected: false,
-  candles: [],
-  signalData: null,
-  trades: [],
-  symbols: [
-    { symbol: "BTCUSDT", price: null, change_24h: null },
-    { symbol: "ETHUSDT", price: null, change_24h: null },
-    { symbol: "SOLUSDT", price: null, change_24h: null },
-  ],
-
-  // Actions
-  setSymbol: (symbol: string) =>
-    set({
-      activeSymbol: symbol,
+export const useDashboardStore = create<DashboardState>()(
+  persist(
+    (set, get) => ({
+      // Initial state
+      activeSymbol: "BTCUSDT",
+      activeInterval: "15m",
+      wsConnected: false,
       candles: [],
       signalData: null,
       trades: [],
-      wsConnected: false,
+      symbols: [
+        { symbol: "BTCUSDT", price: null, change_24h: null },
+        { symbol: "ETHUSDT", price: null, change_24h: null },
+        { symbol: "SOLUSDT", price: null, change_24h: null },
+      ],
+
+      // Actions
+      setSymbol: (symbol: string) =>
+        set({
+          activeSymbol: symbol,
+          candles: [],
+          signalData: null,
+          trades: [],
+          wsConnected: false,
+        }),
+
+      setInterval: (interval: string) =>
+        set({
+          activeInterval: interval,
+          candles: [],
+          signalData: null,
+          trades: [],
+          wsConnected: false,
+        }),
+
+      setConnected: (connected: boolean) => set({ wsConnected: connected }),
+
+      setCandles: (candles: CandleData[]) => set({ candles }),
+
+      updateCandle: (candle: CandleData) =>
+        set((state) => {
+          const candles = [...state.candles];
+          const lastIdx = candles.length - 1;
+
+          if (lastIdx >= 0 && candles[lastIdx].time === candle.time) {
+            // Update existing candle
+            candles[lastIdx] = candle;
+          } else {
+            // Append new candle
+            candles.push(candle);
+            // Keep bounded
+            if (candles.length > 600) {
+              return { candles: candles.slice(-500) };
+            }
+          }
+          return { candles };
+        }),
+
+      updateSignal: (signal: SignalPayload) =>
+        set((state) => {
+          // Also update the symbol price in the symbols list
+          const symbols = state.symbols.map((s) =>
+            s.symbol === signal.symbol ? { ...s, price: signal.price } : s
+          );
+          return { signalData: signal, symbols };
+        }),
+
+      addTrade: (trade: TradeData) =>
+        set((state) => {
+          const newTrades = [trade, ...state.trades];
+          if (newTrades.length > 50) {
+            newTrades.length = 50; // Keep only latest 50 trades
+          }
+          return { trades: newTrades };
+        }),
+
+      setSymbols: (symbols: SymbolInfo[]) => set({ symbols }),
     }),
-
-  setInterval: (interval: string) =>
-    set({
-      activeInterval: interval,
-      candles: [],
-      signalData: null,
-      trades: [],
-      wsConnected: false,
-    }),
-
-  setConnected: (connected: boolean) => set({ wsConnected: connected }),
-
-  setCandles: (candles: CandleData[]) => set({ candles }),
-
-  updateCandle: (candle: CandleData) =>
-    set((state) => {
-      const candles = [...state.candles];
-      const lastIdx = candles.length - 1;
-
-      if (lastIdx >= 0 && candles[lastIdx].time === candle.time) {
-        // Update existing candle
-        candles[lastIdx] = candle;
-      } else {
-        // Append new candle
-        candles.push(candle);
-        // Keep bounded
-        if (candles.length > 600) {
-          return { candles: candles.slice(-500) };
-        }
-      }
-      return { candles };
-    }),
-
-  updateSignal: (signal: SignalPayload) =>
-    set((state) => {
-      // Also update the symbol price in the symbols list
-      const symbols = state.symbols.map((s) =>
-        s.symbol === signal.symbol ? { ...s, price: signal.price } : s
-      );
-      return { signalData: signal, symbols };
-    }),
-
-  addTrade: (trade: TradeData) =>
-    set((state) => {
-      const newTrades = [trade, ...state.trades];
-      if (newTrades.length > 50) {
-        newTrades.length = 50; // Keep only latest 50 trades
-      }
-      return { trades: newTrades };
-    }),
-
-  setSymbols: (symbols: SymbolInfo[]) => set({ symbols }),
-}));
+    {
+      name: "crypto-dashboard-preferences",
+      // Only persist user preferences — NOT live data
+      partialize: (state) => ({
+        activeSymbol: state.activeSymbol,
+        activeInterval: state.activeInterval,
+      }),
+    }
+  )
+);

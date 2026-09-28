@@ -57,12 +57,35 @@ export default function DashboardPage() {
   const updateSignal = useDashboardStore((s) => s.updateSignal);
   const addTrade = useDashboardStore((s) => s.addTrade);
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Sidebar state — persisted in localStorage
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("sidebar-open");
+      return saved !== null ? saved === "true" : true;
+    }
+    return true;
+  });
 
   const wsManagerRef = useRef<WSManager | null>(null);
 
-  // User setting for whale alerts
-  const [whaleThreshold, setWhaleThreshold] = useState(100000);
+  // Whale alert threshold — persisted in localStorage
+  const [whaleThreshold, setWhaleThreshold] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("whale-threshold");
+      return saved !== null ? Number(saved) : 100000;
+    }
+    return 100000;
+  });
+
+  // Persist sidebar state
+  useEffect(() => {
+    localStorage.setItem("sidebar-open", String(sidebarOpen));
+  }, [sidebarOpen]);
+
+  // Persist whale threshold
+  useEffect(() => {
+    localStorage.setItem("whale-threshold", String(whaleThreshold));
+  }, [whaleThreshold]);
 
   // Handle incoming WebSocket messages
   const handleMessage = useCallback(
