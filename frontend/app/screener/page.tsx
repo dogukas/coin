@@ -54,18 +54,18 @@ export default function ScreenerPage() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-white">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-slate-900/50">
-        <div className="flex items-center gap-4">
+      <header className="flex flex-wrap items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-white/5 bg-slate-900/50 gap-3">
+        <div className="flex items-center gap-3 md:gap-4">
           <Link href="/" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
             <ArrowLeft size={18} />
           </Link>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <LayoutGrid size={20} className="text-white" />
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+              <LayoutGrid size={16} className="text-white md:w-5 md:h-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold">Teknik Analiz & Emir Akışı (Küp Görünümü)</h1>
-              <p className="text-xs text-gray-400">Piyasadaki en hacimli coinlerin TA ve Alış Baskısı analizleri</p>
+              <h1 className="text-base md:text-lg font-bold">Teknik Analiz & Emir Akışı</h1>
+              <p className="text-[10px] md:text-xs text-gray-400 hidden sm:block">Piyasadaki en hacimli coinlerin TA ve Alış Baskısı analizleri</p>
             </div>
           </div>
         </div>
@@ -127,7 +127,7 @@ export default function ScreenerPage() {
       </div>
 
       {/* Grid */}
-      <main className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 p-3 md:p-4 lg:p-6 overflow-y-auto custom-scrollbar">
         {cubes.length === 0 && !loading ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-500">
             Veri bulunamadı. Lütfen API'nin çalıştığından emin olun.

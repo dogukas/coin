@@ -67,18 +67,18 @@ export default function HeatmapPage() {
   return (
     <div className="min-h-screen flex flex-col bg-[#020205] text-white">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-slate-900/50">
-        <div className="flex items-center gap-4">
+      <header className="flex flex-wrap items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-white/5 bg-slate-900/50 gap-3">
+        <div className="flex items-center gap-3 md:gap-4">
           <Link href="/" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
             <ArrowLeft size={18} />
           </Link>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-fuchsia-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
-              <MapIcon size={20} className="text-white" />
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-purple-500 to-fuchsia-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
+              <MapIcon size={16} className="text-white md:w-5 md:h-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold">Piyasa Isı Haritası</h1>
-              <p className="text-xs text-gray-400">Kutu boyutu hacmi, renk fiyat değişimini gösterir</p>
+              <h1 className="text-base md:text-lg font-bold">Piyasa Isı Haritası</h1>
+              <p className="text-[10px] md:text-xs text-gray-400 hidden sm:block">Kutu boyutu hacmi, renk fiyat değişimini gösterir</p>
             </div>
           </div>
         </div>
@@ -106,14 +106,14 @@ export default function HeatmapPage() {
                 className={`flex flex-col items-center justify-center p-2 rounded-sm border border-black/20 hover:brightness-125 transition-all cursor-pointer ${getBackgroundColor(c.change_24h || 0)}`}
                 style={{
                   flexGrow: getFlexGrow(c.volume_usd, maxVol),
-                  minWidth: "120px",
+                  minWidth: "80px",
                   height: `${Math.max(80, getFlexGrow(c.volume_usd, maxVol) * 20)}px`,
                   flexBasis: `${Math.max(10, (c.volume_usd / maxVol) * 30)}%`
                 }}
                 title={`${c.symbol} - Hacim: $${(c.volume_usd / 1000000).toFixed(1)}M`}
               >
-                <span className="font-bold text-lg md:text-xl drop-shadow-md">{c.symbol.replace("USDT", "")}</span>
-                <span className="text-sm font-semibold opacity-90 drop-shadow-md">
+                <span className="font-bold text-sm md:text-lg lg:text-xl drop-shadow-md">{c.symbol.replace("USDT", "")}</span>
+                <span className="text-[10px] md:text-sm font-semibold opacity-90 drop-shadow-md">
                   {c.change_24h !== null ? `${c.change_24h > 0 ? "+" : ""}${c.change_24h.toFixed(2)}%` : "—"}
                 </span>
                 <span className="text-[10px] opacity-70 mt-1">

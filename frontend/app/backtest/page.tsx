@@ -31,53 +31,53 @@ export default function BacktestPage() {
   return (
     <div className="min-h-screen flex flex-col bg-[#020205] text-white">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-slate-900/50">
-        <div className="flex items-center gap-4">
+      <header className="flex flex-wrap items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-white/5 bg-slate-900/50 gap-3">
+        <div className="flex items-center gap-3 md:gap-4">
           <Link href="/" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
             <ArrowLeft size={18} />
           </Link>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
               <Target size={20} className="text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold">Yapay Zeka Sinyal Geçmişi</h1>
-              <p className="text-xs text-gray-400">Son 24 saat içindeki sinyaller ve başarı oranları</p>
+              <h1 className="text-base md:text-lg font-bold">Yapay Zeka Sinyal Geçmişi</h1>
+              <p className="text-[10px] md:text-xs text-gray-400 hidden sm:block">Son 24 saat içindeki sinyaller ve başarı oranları</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full">
+      <main className="flex-1 p-3 md:p-4 lg:p-8 max-w-5xl mx-auto w-full">
         {/* Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="bg-white/5 border border-white/10 rounded-xl p-6 flex flex-col items-center justify-center relative overflow-hidden">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 md:p-6 flex flex-col items-center justify-center relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl" />
             <span className="text-sm text-gray-400 font-semibold mb-2">Başarı Oranı (Win Rate)</span>
-            <div className="text-4xl font-bold text-emerald-400">%{winRate}</div>
+            <div className="text-3xl md:text-4xl font-bold text-emerald-400">%{winRate}</div>
             <span className="text-xs text-emerald-500 mt-2 flex items-center gap-1">
               <CheckCircle2 size={12} /> {MOCK_SIGNALS.filter(s => s.status === "won").length} Kazanç / {MOCK_SIGNALS.filter(s => s.status === "lost").length} Kayıp
             </span>
           </div>
           
-          <div className="bg-white/5 border border-white/10 rounded-xl p-6 flex flex-col items-center justify-center relative overflow-hidden">
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 md:p-6 flex flex-col items-center justify-center relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl" />
             <span className="text-sm text-gray-400 font-semibold mb-2">Toplam Net Kâr (24s)</span>
-            <div className="text-4xl font-bold text-blue-400">+{totalProfit.toFixed(2)}%</div>
+            <div className="text-3xl md:text-4xl font-bold text-blue-400">+{totalProfit.toFixed(2)}%</div>
             <span className="text-xs text-blue-500 mt-2">Bileşik olmayan toplam (Her sinyale eşit yatırım)</span>
           </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-xl p-6 flex flex-col items-center justify-center relative overflow-hidden">
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 md:p-6 flex flex-col items-center justify-center relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl" />
             <span className="text-sm text-gray-400 font-semibold mb-2">Üretilen Sinyal Sayısı</span>
-            <div className="text-4xl font-bold text-white">{MOCK_SIGNALS.length}</div>
+            <div className="text-3xl md:text-4xl font-bold text-white">{MOCK_SIGNALS.length}</div>
             <span className="text-xs text-gray-500 mt-2">Sadece Güçlü Al/Sat sinyalleri baz alınmıştır</span>
           </div>
         </div>
 
         {/* Table */}
-        <div className="bg-slate-900/50 border border-white/5 rounded-xl overflow-hidden">
-          <table className="w-full text-left border-collapse">
+        <div className="bg-slate-900/50 border border-white/5 rounded-xl overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[700px]">
             <thead>
               <tr className="bg-white/5 text-xs text-gray-400 uppercase tracking-wider">
                 <th className="px-6 py-4 font-semibold">Tarih</th>

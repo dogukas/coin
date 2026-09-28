@@ -104,3 +104,31 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ──────────────────────────────────────────────
+   Mobile / Touch Optimizations
+   ────────────────────────────────────────────── */
+
+/* Safe area padding for iPhone notch/home indicator */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 8px);
+}
+
+/* Add bottom padding on mobile to prevent content being hidden behind bottom nav */
+@media (max-width: 639px) {
+  main {
+    padding-bottom: 64px;
+  }
+}
+
+/* Improve touch targets on mobile */
+@media (max-width: 768px) {
+  button, a {
+    min-height: 36px;
+  }
+}
+
+/* Smooth scrolling for mobile */
+.custom-scrollbar {
+  -webkit-overflow-scrolling: touch;
+}

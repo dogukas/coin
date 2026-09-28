@@ -23,7 +23,9 @@ import {
   PanelLeft,
   LayoutGrid,
   Map,
-  Target
+  Target,
+  Home,
+  BarChart3
 } from "lucide-react";
 
 import GlobalMarketPanel from "@/components/dashboard/GlobalMarketPanel";
@@ -145,8 +147,8 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen flex flex-col bg-[#020205] text-white selection:bg-emerald-500/30">
       {/* ── Top Bar (Glassmorphism) ── */}
-      <header className="flex items-center justify-between px-6 py-3 border-b border-white/5 bg-slate-900/40 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center gap-3">
+      <header className="flex flex-wrap items-center justify-between px-3 md:px-6 py-3 border-b border-white/5 bg-slate-900/40 backdrop-blur-xl sticky top-0 z-50 gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
           {/* Sidebar toggle */}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -156,51 +158,51 @@ export default function DashboardPage() {
             {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}
           </button>
 
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20 border border-white/10">
-            <Activity size={18} className="text-white drop-shadow-md" />
+          <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20 border border-white/10">
+            <Activity size={16} className="text-white drop-shadow-md md:w-[18px] md:h-[18px]" />
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight leading-tight">
+            <h1 className="text-base md:text-lg font-bold tracking-tight leading-tight">
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">Crypto</span>
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">Signal</span>
             </h1>
-            <p className="text-[10px] text-gray-500 font-medium uppercase tracking-widest">
+            <p className="text-[9px] md:text-[10px] text-gray-500 font-medium uppercase tracking-widest hidden sm:block">
               Analiz Motoru
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 shadow-inner">
-            <span className="text-[10px] text-gray-400 font-medium uppercase">Aktif</span>
-            <span className="text-sm font-black text-white drop-shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+          <div className="hidden sm:flex items-center gap-2 px-3 md:px-4 py-1 md:py-1.5 rounded-full bg-white/5 border border-white/10 shadow-inner">
+            <span className="text-[9px] md:text-[10px] text-gray-400 font-medium uppercase">Aktif</span>
+            <span className="text-xs md:text-sm font-black text-white drop-shadow-sm">
               {activeSymbol.replace("USDT", "")}
-              <span className="text-gray-500 font-medium text-xs ml-0.5">/USDT</span>
+              <span className="text-gray-500 font-medium text-[10px] md:text-xs ml-0.5">/USDT</span>
             </span>
           </div>
 
-          <Link href="/backtest" className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+          <Link href="/backtest" className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.2)]">
             <Target size={14} />
             Sinyal Geçmişi
           </Link>
 
-          <Link href="/heatmap" className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 hover:border-purple-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(168,85,247,0.1)] hover:shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+          <Link href="/heatmap" className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 hover:border-purple-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(168,85,247,0.1)] hover:shadow-[0_0_20px_rgba(168,85,247,0.2)]">
             <Map size={14} />
             Isı Haritası
           </Link>
           
-          <Link href="/screener" className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 hover:border-blue-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.2)]">
+          <Link href="/screener" className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 hover:border-blue-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.2)]">
             <LayoutGrid size={14} />
             Küp Ekranı
           </Link>
 
           {/* Whale Alert Threshold Dropdown */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-white/20 transition-colors shadow-inner">
-            <span className="text-[10px] text-gray-400 font-medium">Balina:</span>
+          <div className="hidden sm:flex items-center gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-white/20 transition-colors shadow-inner">
+            <span className="text-[9px] md:text-[10px] text-gray-400 font-medium">Balina:</span>
             <select
               value={whaleThreshold}
               onChange={(e) => setWhaleThreshold(Number(e.target.value))}
-              className="bg-transparent text-xs text-white outline-none cursor-pointer font-bold drop-shadow-sm"
+              className="bg-transparent text-[10px] md:text-xs text-white outline-none cursor-pointer font-bold drop-shadow-sm"
             >
               <option value="1000" className="bg-slate-900 text-white">&gt; $1K</option>
               <option value="10000" className="bg-slate-900 text-white">&gt; $10K</option>
@@ -215,43 +217,43 @@ export default function DashboardPage() {
           <LiveClock />
 
           {/* Connection status */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5">
+          <div className="flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-white/[0.03] border border-white/5">
             {wsConnected ? (
               <>
                 <div className="relative">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <div className="absolute inset-0 w-2 h-2 rounded-full bg-emerald-500 animate-pulse-dot" />
+                  <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-emerald-500" />
+                  <div className="absolute inset-0 w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-emerald-500 animate-pulse-dot" />
                 </div>
-                <span className="text-[10px] text-emerald-400 font-medium">
+                <span className="text-[9px] md:text-[10px] text-emerald-400 font-medium">
                   CANLI
                 </span>
-                <Wifi size={12} className="text-emerald-500" />
+                <Wifi size={10} className="text-emerald-500 hidden sm:block" />
               </>
             ) : (
               <>
-                <div className="w-2 h-2 rounded-full bg-red-500" />
-                <span className="text-[10px] text-red-400 font-medium">
-                  BAĞLANTI YOK
+                <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-red-500" />
+                <span className="text-[9px] md:text-[10px] text-red-400 font-medium whitespace-nowrap">
+                  BAĞ YOK
                 </span>
-                <WifiOff size={12} className="text-red-500" />
+                <WifiOff size={10} className="text-red-500 hidden sm:block" />
               </>
             )}
           </div>
         </div>
       </header>
 
-      {/* ── Main Content (3-column layout) ── */}
-      <main className="flex-1 flex overflow-hidden">
+      {/* ── Main Content (Responsive Flex) ── */}
+      <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
         {/* Left: Coin Browser Sidebar */}
         <div
           className={`
-            border-r border-white/5 bg-white/[0.005] flex-shrink-0
+            border-b lg:border-b-0 lg:border-r border-white/5 bg-white/[0.005] flex-shrink-0
             transition-all duration-300 overflow-hidden
-            ${sidebarOpen ? "w-[280px]" : "w-0"}
+            ${sidebarOpen ? "h-[300px] lg:h-full lg:w-[280px]" : "h-0 lg:h-full lg:w-0"}
           `}
         >
           {sidebarOpen && (
-            <div className="w-[280px] h-full">
+            <div className="w-full lg:w-[280px] h-full">
               <CoinBrowser />
             </div>
           )}
@@ -259,7 +261,7 @@ export default function DashboardPage() {
 
         {/* Center: Chart */}
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5">
+          <div className="flex flex-wrap items-center justify-between px-3 md:px-4 py-2.5 border-b border-white/5 gap-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-white">
                 {activeSymbol.replace("USDT", "")}
@@ -267,12 +269,12 @@ export default function DashboardPage() {
               <span className="text-[10px] text-gray-500 bg-white/[0.03] px-1.5 py-0.5 rounded">/USDT</span>
               
               {/* Interval Selector */}
-              <div className="flex bg-white/[0.03] rounded-lg p-0.5 ml-2 border border-white/5">
+              <div className="flex bg-white/[0.03] rounded-lg p-0.5 ml-1 md:ml-2 border border-white/5 overflow-x-auto">
                 {["1m", "5m", "15m", "1h", "4h"].map((int) => (
                   <button
                     key={int}
                     onClick={() => setInterval(int)}
-                    className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors ${
+                    className={`px-1.5 md:px-2 py-1 rounded text-[10px] font-semibold transition-colors whitespace-nowrap ${
                       activeInterval === int
                         ? "bg-white/[0.08] text-white"
                         : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.05]"
@@ -285,24 +287,44 @@ export default function DashboardPage() {
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60" />
-              <span className="text-[10px] text-gray-500">TradingView Charts</span>
+              <span className="text-[9px] md:text-[10px] text-gray-500 hidden sm:block">TradingView Charts</span>
             </div>
           </div>
-          <div className="flex-1 min-h-[400px]">
+          <div className="w-full h-[300px] md:h-[400px] lg:flex-1 lg:min-h-0">
             <CandlestickChart />
           </div>
           <GlobalMarketPanel />
         </div>
 
         {/* Right: Signal + Indicators + Trades */}
-        <div className="w-[340px] flex-shrink-0 border-l border-white/5 flex flex-col p-3 gap-3">
-          <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
+        <div className="w-full lg:w-[340px] flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/5 flex flex-col p-3 gap-3">
+          <div className="flex-1 lg:overflow-y-auto custom-scrollbar space-y-3">
             <SignalCard />
             <IndicatorGrid />
             <LiveTrades />
           </div>
         </div>
       </main>
+
+      {/* ── Mobile Bottom Navigation ── */}
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 flex items-center justify-around py-2 px-1 safe-area-bottom">
+        <div className="flex flex-col items-center gap-0.5 text-emerald-400">
+          <Home size={18} />
+          <span className="text-[9px] font-semibold">Ana Sayfa</span>
+        </div>
+        <Link href="/backtest" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
+          <Target size={18} />
+          <span className="text-[9px] font-semibold">Sinyaller</span>
+        </Link>
+        <Link href="/heatmap" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
+          <Map size={18} />
+          <span className="text-[9px] font-semibold">Isı Haritası</span>
+        </Link>
+        <Link href="/screener" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
+          <LayoutGrid size={18} />
+          <span className="text-[9px] font-semibold">Küp Ekran</span>
+        </Link>
+      </nav>
     </div>
   );
 }
