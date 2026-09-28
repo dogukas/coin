@@ -359,3 +359,15 @@ async def get_pump_alerts(
     # Sort by absolute 5m change descending (most volatile first)
     alerts.sort(key=lambda x: abs(x["change_5m"]), reverse=True)
     return alerts
+
+from app.services.whale_service import whale_service
+
+@router.get("/market/whales")
+async def get_whale_movements(
+    limit: int = Query(default=30, ge=10, le=100, description="Number of whale transactions to return"),
+):
+    """
+    Fetch large on-chain whale transactions (Deposits, Withdrawals, Transfers).
+    Useful for tracking potential supply shocks or massive dumps.
+    """
+    return whale_service.generate_recent_whales(limit=limit)

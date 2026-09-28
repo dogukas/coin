@@ -25,7 +25,8 @@ import {
   Map,
   Target,
   Home,
-  BarChart3
+  BarChart3,
+  Fish
 } from "lucide-react";
 
 import GlobalMarketPanel from "@/components/dashboard/GlobalMarketPanel";
@@ -219,6 +220,11 @@ export default function DashboardPage() {
             Küp Ekranı
           </Link>
 
+          <Link href="/whales" className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(6,182,212,0.1)] hover:shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+            <Fish size={14} />
+            Balinalar
+          </Link>
+
           {/* Whale Alert Threshold Dropdown */}
           <div className="hidden sm:flex items-center gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-white/20 transition-colors shadow-inner">
             <span className="text-[9px] md:text-[10px] text-gray-400 font-medium">Balina:</span>
@@ -346,6 +352,10 @@ export default function DashboardPage() {
         <Link href="/screener" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
           <LayoutGrid size={18} />
           <span className="text-[9px] font-semibold">Küp Ekran</span>
+        </Link>
+        <Link href="/whales" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
+          <Fish size={18} />
+          <span className="text-[9px] font-semibold">Balinalar</span>
         </Link>
       </nav>
     </div>
