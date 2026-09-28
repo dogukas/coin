@@ -275,3 +275,87 @@ async def get_buy_sell_pressure(
         })
 
     return result
+
+
+@router.get("/market/pump-alerts")
+async def get_pump_alerts(
+    min_change: float = Query(default=2.0, description="Minimum % change to trigger alert"),
+    limit: int = Query(default=50, ge=10, le=100, description="Number of coins to scan"),
+):
+    """
+    Scan top volume coins for sudden price movements (pumps/dumps).
+    Compares current price with the opening price of the last 5-minute candle
+    and the price 15 minutes ago to detect rapid movements.
+    Returns list of coins with significant short-term changes.
+    """
+    # Get top coins by volume
+    all_tickers = await binance_service.fetch_all_24h_tickers()
+    if not all_tickers:
+        return []
+
+    # Filter and sort by volume
+    filtered = [t for t in all_tickers if t["volume_usd"] >= 500_000]
+    filtered.sort(key=lambda x: x["volume_usd"], reverse=True)
+    top_coins = filtered[:limit]
+
+    alerts = []
+    sem = asyncio.Semaphore(10)
+
+    async def check_coin(ticker):
+        symbol = ticker["symbol"]
+        async with sem:
+            try:
+                # Fetch last 4 x 5-minute candles (= 20 min lookback)
+                candles = await binance_service.fetch_klines(symbol, "5m", limit=4)
+                if not candles or len(candles) < 2:
+                    return None
+
+                current_price = candles[-1]["close"]
+                
+                # 5-minute change (current vs previous candle open)
+                prev_open = candles[-2]["open"]
+                change_5m = ((current_price - prev_open) / prev_open) * 100
+
+                # 15-minute change (current vs 3 candles ago)
+                if len(candles) >= 4:
+                    old_open = candles[0]["open"]
+                    change_15m = ((current_price - old_open) / old_open) * 100
+                else:
+                    change_15m = change_5m
+
+                # Volume spike: compare latest candle volume to average of older candles
+                latest_vol = candles[-1]["volume"]
+                older_vols = [c["volume"] for c in candles[:-1]]
+                avg_vol = sum(older_vols) / len(older_vols) if older_vols else 1
+                vol_ratio = latest_vol / avg_vol if avg_vol > 0 else 1
+
+                # Check if this qualifies as a pump or dump
+                is_pump = change_5m >= min_change or change_15m >= (min_change * 1.5)
+                is_dump = change_5m <= -min_change or change_15m <= -(min_change * 1.5)
+
+                if is_pump or is_dump:
+                    return {
+                        "symbol": symbol,
+                        "price": current_price,
+                        "change_5m": round(change_5m, 2),
+                        "change_15m": round(change_15m, 2),
+                        "change_24h": ticker["change_24h"],
+                        "volume_usd": ticker["volume_usd"],
+                        "vol_spike": round(vol_ratio, 2),
+                        "type": "pump" if is_pump else "dump",
+                        "intensity": "extreme" if abs(change_5m) >= min_change * 2.5 else "high" if abs(change_5m) >= min_change * 1.5 else "moderate",
+                    }
+            except Exception as e:
+                logger.debug(f"Error checking {symbol}: {e}")
+            return None
+
+    tasks = [check_coin(t) for t in top_coins]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for res in results:
+        if isinstance(res, dict):
+            alerts.append(res)
+
+    # Sort by absolute 5m change descending (most volatile first)
+    alerts.sort(key=lambda x: abs(x["change_5m"]), reverse=True)
+    return alerts

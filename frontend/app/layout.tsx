@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Toaster } from "sonner";
 import "./globals.css";
+import PumpAlerts from "@/components/dashboard/PumpAlerts";
 
 export const metadata: Metadata = {
   title: "Crypto Signal Dashboard | Gerçek Zamanlı Analiz",
@@ -39,6 +40,9 @@ export default function RootLayout({
         
         {/* Toast Notifications */}
         <Toaster position="top-right" theme="dark" richColors />
+        
+        {/* Global Pump/Dump Detector */}
+        <PumpAlerts />
       </body>
     </html>
   );
