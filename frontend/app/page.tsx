@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 
 import GlobalMarketPanel from "@/components/dashboard/GlobalMarketPanel";
+import AiCopilot from "@/components/dashboard/AiCopilot";
 
 // Dynamic import for chart (no SSR — requires browser APIs)
 const CandlestickChart = dynamic(
@@ -328,6 +329,7 @@ export default function DashboardPage() {
         {/* Right: Signal + Indicators + Trades */}
         <div className="w-full lg:w-[340px] flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/5 flex flex-col p-3 gap-3">
           <div className="flex-1 lg:overflow-y-auto custom-scrollbar space-y-3">
+            <AiCopilot />
             <SignalCard />
             <IndicatorGrid />
             <LiveTrades />
