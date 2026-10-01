@@ -35,7 +35,7 @@ export default function Watchlist() {
     };
 
     fetchPrices();
-    const interval = setInterval(fetchPrices, 30000); // Refresh every 30s
+    const interval = setInterval(fetchPrices, 1000); // Refresh every 1s
     return () => clearInterval(interval);
   }, [setSymbols]);
 

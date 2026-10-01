@@ -67,20 +67,26 @@ export default function GlobalMarketPanel() {
 
   useEffect(() => {
     fetchPressure();
-    const interval = setInterval(fetchPressure, 60000); // Refresh every 60s
+    const interval = setInterval(fetchPressure, 1000); // Refresh every 1s
     return () => clearInterval(interval);
   }, [fetchPressure]);
 
   // Fetch trending coins (top gainers)
   useEffect(() => {
-    fetch(`${API_URL}/api/market/overview?limit=5`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.gainers) {
-          setTrendingCoins(data.gainers.slice(0, 4));
-        }
-      })
-      .catch(() => {});
+    const fetchTrending = () => {
+      fetch(`${API_URL}/api/market/overview?limit=5`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.gainers) {
+            setTrendingCoins(data.gainers.slice(0, 4));
+          }
+        })
+        .catch(() => {});
+    };
+    
+    fetchTrending();
+    const interval = setInterval(fetchTrending, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   // Calculate totals from real data

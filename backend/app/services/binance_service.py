@@ -25,6 +25,19 @@ class BinanceService:
         self._running = False
         self._session: Optional[aiohttp.ClientSession] = None
         self._reconnect_delays: Dict[str, float] = {}
+        self._cache: Dict[str, dict] = {}
+
+    def _get_from_cache(self, key: str, ttl: float) -> Optional[Any]:
+        import time
+        if key in self._cache:
+            entry = self._cache[key]
+            if time.time() - entry['time'] < ttl:
+                return entry['data']
+        return None
+
+    def _set_cache(self, key: str, data: Any):
+        import time
+        self._cache[key] = {'time': time.time(), 'data': data}
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create an aiohttp session."""
@@ -58,6 +71,11 @@ class BinanceService:
         Fetch historical OHLCV candles from Binance REST API.
         Returns list of candle dicts with keys: open_time, open, high, low, close, volume, close_time.
         """
+        cache_key = f"klines_{symbol}_{interval}_{limit}"
+        cached = self._get_from_cache(cache_key, 2.5)
+        if cached is not None:
+            return cached
+
         session = await self._get_session()
         url = f"{settings.BINANCE_REST_URL}/api/v3/klines"
         params = {
@@ -87,6 +105,7 @@ class BinanceService:
                         "taker_buy_volume": float(k[9]),
                     })
                 logger.info(f"Fetched {len(candles)} klines for {symbol} ({interval})")
+                self._set_cache(cache_key, candles)
                 return candles
 
         except Exception as e:
@@ -131,6 +150,11 @@ class BinanceService:
         Fetch 24h ticker statistics for ALL symbols from Binance.
         Returns list of dicts with: symbol, price, change_24h, volume_usd, high, low.
         """
+        cache_key = "all_tickers"
+        cached = self._get_from_cache(cache_key, 2.5)
+        if cached is not None:
+            return cached
+
         session = await self._get_session()
         url = f"{settings.BINANCE_REST_URL}/api/v3/ticker/24hr"
 
@@ -170,6 +194,7 @@ class BinanceService:
                         continue
 
                 logger.info(f"Fetched {len(result)} USDT tickers from Binance")
+                self._set_cache(cache_key, result)
                 return result
         except Exception as e:
             logger.error(f"Error fetching all 24h tickers: {e}")
