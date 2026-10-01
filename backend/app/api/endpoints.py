@@ -5,6 +5,7 @@ REST API endpoints — health check, symbol list, candle history, signal snapsho
 import logging
 from typing import List, Optional
 
+import aiohttp
 from fastapi import APIRouter, Query
 
 from app.core.config import settings
@@ -371,3 +372,53 @@ async def get_whale_movements(
     Useful for tracking potential supply shocks or massive dumps.
     """
     return whale_service.generate_recent_whales(limit=limit)
+
+
+@router.get("/market/fear-greed")
+async def get_fear_greed():
+    """
+    Proxy for Fear & Greed Index API (avoids CORS on frontend).
+    Returns value, classification in Turkish, and global market stats.
+    """
+    session = await binance_service._get_session()
+    
+    # Classification translation map
+    tr_map = {
+        "Extreme Fear": "Aşırı Korku",
+        "Fear": "Korku",
+        "Neutral": "Nötr",
+        "Greed": "Açgözlülük",
+        "Extreme Greed": "Aşırı Açgözlülük",
+    }
+    
+    result = {
+        "value": 50,
+        "classification": "Nötr",
+        "global_volume_24h": 0,
+        "global_volume_change": 0,
+    }
+    
+    # 1. Fear & Greed
+    try:
+        async with session.get("https://api.alternative.me/fng/?limit=1", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data and data.get("data") and len(data["data"]) > 0:
+                    entry = data["data"][0]
+                    val = int(entry["value"])
+                    eng_class = entry.get("value_classification", "Neutral")
+                    result["value"] = val
+                    result["classification"] = tr_map.get(eng_class, eng_class)
+    except Exception as e:
+        logger.warning(f"Fear & Greed fetch failed: {e}")
+    
+    # 2. Global volume from all tickers
+    try:
+        all_tickers = await binance_service.fetch_all_24h_tickers()
+        if all_tickers:
+            total_vol = sum(t["volume_usd"] for t in all_tickers)
+            result["global_volume_24h"] = round(total_vol, 2)
+    except Exception as e:
+        logger.warning(f"Global volume calc failed: {e}")
+    
+    return result

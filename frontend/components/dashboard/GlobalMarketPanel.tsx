@@ -23,26 +23,30 @@ export default function GlobalMarketPanel() {
   
   const [fearGreed, setFearGreed] = useState<{ value: number; classification: string }>({
     value: 50,
-    classification: "Neutral",
+    classification: "Nötr",
   });
+  const [globalVolume, setGlobalVolume] = useState<number>(0);
 
   const [pressureData, setPressureData] = useState<PressureBar[]>([]);
   const [pressureLoading, setPressureLoading] = useState(false);
   const [trendingCoins, setTrendingCoins] = useState<TrendingCoin[]>([]);
 
-  // Fetch real Fear & Greed index
+  // Fetch Fear & Greed + Global Volume from our backend proxy (no CORS issues)
   useEffect(() => {
-    fetch("https://api.alternative.me/fng/?limit=1")
+    fetch(`${API_URL}/api/market/fear-greed`)
       .then((res) => res.json())
       .then((data) => {
-        if (data && data.data && data.data.length > 0) {
+        if (data) {
           setFearGreed({
-            value: Number(data.data[0].value),
-            classification: data.data[0].value_classification,
+            value: data.value || 50,
+            classification: data.classification || "Nötr",
           });
+          if (data.global_volume_24h) {
+            setGlobalVolume(data.global_volume_24h);
+          }
         }
       })
-      .catch(() => {}); // Fallback to default
+      .catch(() => {}); // Fallback to defaults
   }, []);
 
   // Fetch real taker buy/sell pressure from backend
@@ -97,11 +101,11 @@ export default function GlobalMarketPanel() {
 
   // Calculate Fear/Greed gauge rotation (-90deg to 90deg)
   const fgRotation = (fearGreed.value / 100) * 180 - 90;
-  let fgColor = "#ef5350"; // Extreme Fear
-  if (fearGreed.value >= 25) fgColor = "#ff9800"; // Fear
-  if (fearGreed.value >= 45) fgColor = "#fdd835"; // Neutral
-  if (fearGreed.value >= 55) fgColor = "#66bb6a"; // Greed
-  if (fearGreed.value >= 75) fgColor = "#00e676"; // Extreme Greed
+  let fgColor = "#ef5350"; // Aşırı Korku
+  if (fearGreed.value >= 25) fgColor = "#ff9800"; // Korku
+  if (fearGreed.value >= 45) fgColor = "#fdd835"; // Nötr
+  if (fearGreed.value >= 55) fgColor = "#66bb6a"; // Açgözlülük
+  if (fearGreed.value >= 75) fgColor = "#00e676"; // Aşırı Açgözlülük
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border-t border-white/5 bg-transparent min-h-[160px] relative z-10 backdrop-blur-xl">
@@ -151,17 +155,19 @@ export default function GlobalMarketPanel() {
               <span className="text-sm font-black drop-shadow-sm" style={{ color: fgColor }}>{fearGreed.classification}</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">24s Alıcı Oranı</span>
+              <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Global Hacim (24s)</span>
               <span className="text-sm font-bold text-white drop-shadow-sm">
-                {pressureData.length > 0 
-                  ? `%${(totalBuy / (totalVol || 1) * 100).toFixed(1)}`
+                {globalVolume > 0 
+                  ? `$${formatVol(globalVolume)}`
                   : "—"
                 }
-                {totalBuy > totalSell ? (
-                  <span className="text-emerald-400 text-[10px] ml-1 bg-emerald-500/10 px-1 py-0.5 rounded shadow-sm">ALICI GÜÇLÜ</span>
-                ) : totalSell > totalBuy ? (
-                  <span className="text-red-400 text-[10px] ml-1 bg-red-500/10 px-1 py-0.5 rounded shadow-sm">SATICI GÜÇLÜ</span>
-                ) : null}
+                {pressureData.length > 0 && (
+                  totalBuy > totalSell ? (
+                    <span className="text-emerald-400 text-[10px] ml-1 bg-emerald-500/10 px-1 py-0.5 rounded shadow-sm">ALICI GÜÇLÜ</span>
+                  ) : (
+                    <span className="text-red-400 text-[10px] ml-1 bg-red-500/10 px-1 py-0.5 rounded shadow-sm">SATICI GÜÇLÜ</span>
+                  )
+                )}
               </span>
             </div>
           </div>
