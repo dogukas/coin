@@ -131,36 +131,36 @@ export default function AiCopilot() {
   // Determine colors based on type
   const colorMap = {
     bullish: {
-      bg: "bg-emerald-950/40",
-      border: "border-emerald-500/50",
+      bg: "bg-emerald-950/20",
+      border: "border-emerald-500/30",
       glow: "bg-emerald-500",
-      icon: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-      badge: "bg-emerald-500 text-white",
-      text: "text-emerald-300"
+      icon: "text-emerald-300 bg-emerald-500/10 border-emerald-500/30",
+      badge: "bg-gradient-to-r from-emerald-600 to-emerald-400 text-white shadow-emerald-500/20",
+      accent: "#10b981"
     },
     bearish: {
-      bg: "bg-rose-950/40",
-      border: "border-rose-500/50",
+      bg: "bg-rose-950/20",
+      border: "border-rose-500/30",
       glow: "bg-rose-500",
-      icon: "text-rose-400 bg-rose-500/10 border-rose-500/20",
-      badge: "bg-rose-500 text-white",
-      text: "text-rose-300"
+      icon: "text-rose-300 bg-rose-500/10 border-rose-500/30",
+      badge: "bg-gradient-to-r from-rose-600 to-rose-400 text-white shadow-rose-500/20",
+      accent: "#f43f5e"
     },
     warning: {
-      bg: "bg-orange-950/40",
-      border: "border-orange-500/50",
-      glow: "bg-orange-500",
-      icon: "text-orange-400 bg-orange-500/10 border-orange-500/20",
-      badge: "bg-orange-500 text-white",
-      text: "text-orange-300"
+      bg: "bg-amber-950/20",
+      border: "border-amber-500/30",
+      glow: "bg-amber-500",
+      icon: "text-amber-300 bg-amber-500/10 border-amber-500/30",
+      badge: "bg-gradient-to-r from-amber-600 to-amber-400 text-white shadow-amber-500/20",
+      accent: "#f59e0b"
     },
     neutral: {
-      bg: "bg-slate-900/60",
-      border: "border-slate-700",
-      glow: "bg-blue-500",
-      icon: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-      badge: "bg-slate-700 text-gray-300",
-      text: "text-gray-300"
+      bg: "bg-slate-900/40",
+      border: "border-indigo-500/20",
+      glow: "bg-indigo-500",
+      icon: "text-indigo-300 bg-indigo-500/10 border-indigo-500/30",
+      badge: "bg-gradient-to-r from-slate-700 to-slate-600 text-gray-200 shadow-slate-900/50",
+      accent: "#6366f1"
     }
   };
 
@@ -168,42 +168,49 @@ export default function AiCopilot() {
 
   return (
     <div className={`
-      relative overflow-hidden rounded-2xl border p-5 backdrop-blur-2xl shadow-2xl transition-all duration-500
-      ${style.bg} ${style.border}
+      relative overflow-hidden rounded-2xl border p-5 backdrop-blur-3xl shadow-2xl transition-all duration-700 hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)]
+      ${style.bg} ${style.border} group/copilot
     `}>
-      {/* Background glow animation */}
-      <div className={`absolute -top-10 -right-10 w-48 h-48 rounded-full blur-[80px] opacity-20 pointer-events-none animate-pulse ${style.glow}`} />
+      {/* Premium Animated Grid Background */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)] pointer-events-none" />
+
+      {/* Dynamic Radar/Glow Animation */}
+      <div className={`absolute -top-24 -right-24 w-64 h-64 rounded-full blur-[100px] opacity-20 pointer-events-none animate-pulse ${style.glow}`} />
+      <div className={`absolute -bottom-10 -left-10 w-40 h-40 rounded-full blur-[80px] opacity-10 pointer-events-none ${style.glow}`} />
 
       {/* Header */}
-      <div className="flex justify-between items-center mb-4 relative z-10">
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shadow-inner ${style.icon}`}>
-            <Bot size={22} />
+      <div className="flex justify-between items-start mb-5 relative z-10">
+        <div className="flex items-center gap-3.5">
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center border shadow-inner relative overflow-hidden ${style.icon}`}>
+            {/* Subtle inner scan effect */}
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/10 to-transparent -translate-y-full opacity-0 group-hover/copilot:opacity-100 transition-opacity duration-1000" />
+            <Bot size={24} className="relative z-10" />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
-              AI Copilot <Sparkles size={14} className="text-yellow-400" />
+            <h4 className="text-[15px] font-extrabold text-white flex items-center gap-1.5 tracking-tight">
+              AI COPILOT <Sparkles size={14} className="text-yellow-400 animate-pulse" />
             </h4>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Güven Skoru:</span>
-              <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[9px] text-gray-400 uppercase tracking-[0.2em] font-bold">Güven Skoru:</span>
+              <div className="w-20 h-1.5 bg-black/40 rounded-full overflow-hidden shadow-inner border border-white/5">
                 <div 
-                  className={`h-full rounded-full ${style.glow} transition-all duration-1000`} 
-                  style={{ width: `${advice.confidence}%` }}
+                  className={`h-full rounded-full ${style.glow} transition-all duration-1000 ease-out`} 
+                  style={{ width: `${advice.confidence}%`, boxShadow: `0 0 10px ${style.accent}` }}
                 />
               </div>
             </div>
           </div>
         </div>
-        <div className={`px-3 py-1 rounded-md text-xs font-black tracking-wider shadow-lg ${style.badge}`}>
+        <div className={`px-4 py-1.5 rounded-lg text-xs font-black tracking-widest shadow-lg uppercase border border-white/10 ${style.badge}`}>
           {advice.action === 'BUY' ? 'GİRİŞ YAP' : 
-           advice.action === 'SELL' ? 'ÇIKIŞ YAP' : 'BEKLE'}
+           advice.action === 'SELL' ? 'ÇIKIŞ YAP' : 'PİYASAYI İZLE'}
         </div>
       </div>
       
       {/* AI Advice Text */}
-      <div className="relative z-10 bg-black/20 rounded-xl p-3 border border-white/5 mb-4">
-        <p className="text-sm text-gray-200 font-medium leading-relaxed">
+      <div className="relative z-10 bg-black/40 rounded-xl p-4 border border-white/10 mb-5 shadow-inner overflow-hidden">
+        <div className="absolute top-0 left-0 w-1 h-full opacity-80 shadow-[0_0_10px_currentColor]" style={{ backgroundColor: style.accent, color: style.accent }} />
+        <p className="text-[13px] text-gray-300 font-medium leading-relaxed pl-2 tracking-wide">
           {advice.text}
         </p>
       </div>
@@ -213,33 +220,33 @@ export default function AiCopilot() {
         <div className="grid grid-cols-3 gap-3 relative z-10">
           
           {advice.entry && (
-            <div className="bg-slate-900/60 rounded-xl p-2.5 border border-slate-700 shadow-inner flex flex-col items-center justify-center group hover:bg-slate-800 transition-colors">
-              <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">
-                <Crosshair size={12} className="text-blue-400" /> Giriş
+            <div className="bg-slate-950/60 rounded-xl p-3.5 border border-white/5 shadow-lg flex flex-col items-center justify-center group hover:bg-slate-900 transition-all duration-300 hover:-translate-y-1 hover:border-blue-500/30">
+              <div className="flex items-center gap-1.5 text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1.5">
+                <Crosshair size={12} className="text-blue-400 opacity-80" /> GİRİŞ
               </div>
-              <div className="text-[13px] font-bold text-white group-hover:scale-105 transition-transform">
+              <div className="text-[15px] font-black text-white font-mono tracking-tight group-hover:text-blue-400 transition-colors drop-shadow-md">
                 {formatPrice(advice.entry)}
               </div>
             </div>
           )}
 
           {advice.target && (
-            <div className="bg-emerald-950/30 rounded-xl p-2.5 border border-emerald-900/50 shadow-inner flex flex-col items-center justify-center group hover:bg-emerald-900/40 transition-colors">
-              <div className="flex items-center gap-1.5 text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider mb-1">
-                <Target size={12} className="text-emerald-400" /> Kar Al
+            <div className="bg-slate-950/60 rounded-xl p-3.5 border border-white/5 shadow-lg flex flex-col items-center justify-center group hover:bg-slate-900 transition-all duration-300 hover:-translate-y-1 hover:border-emerald-500/30">
+              <div className="flex items-center gap-1.5 text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1.5">
+                <Target size={12} className="text-emerald-400 opacity-80" /> HEDEF
               </div>
-              <div className="text-[13px] font-bold text-emerald-400 group-hover:scale-105 transition-transform">
+              <div className="text-[15px] font-black text-white font-mono tracking-tight group-hover:text-emerald-400 transition-colors drop-shadow-md">
                 {formatPrice(advice.target)}
               </div>
             </div>
           )}
 
           {advice.stopLoss && (
-            <div className="bg-rose-950/30 rounded-xl p-2.5 border border-rose-900/50 shadow-inner flex flex-col items-center justify-center group hover:bg-rose-900/40 transition-colors">
-              <div className="flex items-center gap-1.5 text-[10px] text-rose-400/80 font-bold uppercase tracking-wider mb-1">
-                <ShieldAlert size={12} className="text-rose-400" /> Zarar Kes
+            <div className="bg-slate-950/60 rounded-xl p-3.5 border border-white/5 shadow-lg flex flex-col items-center justify-center group hover:bg-slate-900 transition-all duration-300 hover:-translate-y-1 hover:border-rose-500/30">
+              <div className="flex items-center gap-1.5 text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1.5">
+                <ShieldAlert size={12} className="text-rose-400 opacity-80" /> STOP
               </div>
-              <div className="text-[13px] font-bold text-rose-400 group-hover:scale-105 transition-transform">
+              <div className="text-[15px] font-black text-white font-mono tracking-tight group-hover:text-rose-400 transition-colors drop-shadow-md">
                 {formatPrice(advice.stopLoss)}
               </div>
             </div>
