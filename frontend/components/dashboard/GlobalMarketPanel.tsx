@@ -114,6 +114,7 @@ export default function GlobalMarketPanel() {
     }).format(v);
   };
 
+
   // Calculate Fear/Greed gauge rotation (-90deg to 90deg)
   const fgRotation = (fearGreed.value / 100) * 180 - 90;
   let fgColor = "#ef5350"; // Aşırı Korku
