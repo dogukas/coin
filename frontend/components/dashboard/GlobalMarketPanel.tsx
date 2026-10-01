@@ -67,7 +67,7 @@ export default function GlobalMarketPanel() {
 
   useEffect(() => {
     fetchPressure();
-    const interval = setInterval(fetchPressure, 1000); // Refresh every 1s
+    const interval = setInterval(fetchPressure, 60000); // Refresh every 60s
     return () => clearInterval(interval);
   }, [fetchPressure]);
 
@@ -85,7 +85,7 @@ export default function GlobalMarketPanel() {
     };
     
     fetchTrending();
-    const interval = setInterval(fetchTrending, 1000);
+    const interval = setInterval(fetchTrending, 60000);
     return () => clearInterval(interval);
   }, []);
 

@@ -59,7 +59,7 @@ export default function CoinBrowser() {
 
   useEffect(() => {
     fetchOverview();
-    const interval = setInterval(fetchOverview, 1000); // Refresh every 1s
+    const interval = setInterval(fetchOverview, 60000); // Refresh every 60s
     return () => clearInterval(interval);
   }, [fetchOverview]);
 

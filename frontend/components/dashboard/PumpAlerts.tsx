@@ -113,7 +113,7 @@ export default function PumpAlerts() {
 
     // Check immediately, then every 30 seconds
     fetchAlerts();
-    const interval = setInterval(fetchAlerts, 1000);
+    const interval = setInterval(fetchAlerts, 60000);
     
     return () => clearInterval(interval);
   }, [setSymbol]);
