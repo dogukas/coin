@@ -59,35 +59,33 @@ export default function DashboardPage() {
   const updateSignal = useDashboardStore((s) => s.updateSignal);
   const addTrade = useDashboardStore((s) => s.addTrade);
 
-  // Sidebar state — persisted in localStorage
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("sidebar-open");
-      return saved !== null ? saved === "true" : true;
-    }
-    return true;
-  });
+  // Sidebar state — persisted in localStorage (read after mount to avoid hydration mismatch)
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
   const wsManagerRef = useRef<WSManager | null>(null);
 
   // Whale alert threshold — persisted in localStorage
-  const [whaleThreshold, setWhaleThreshold] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("whale-threshold");
-      return saved !== null ? Number(saved) : 100000;
-    }
-    return 100000;
-  });
+  const [whaleThreshold, setWhaleThreshold] = useState(100000);
+
+  // Read persisted values AFTER mount (avoids SSR hydration mismatch)
+  useEffect(() => {
+    setMounted(true);
+    const savedSidebar = localStorage.getItem("sidebar-open");
+    if (savedSidebar !== null) setSidebarOpen(savedSidebar === "true");
+    const savedWhale = localStorage.getItem("whale-threshold");
+    if (savedWhale !== null) setWhaleThreshold(Number(savedWhale));
+  }, []);
 
   // Persist sidebar state
   useEffect(() => {
-    localStorage.setItem("sidebar-open", String(sidebarOpen));
-  }, [sidebarOpen]);
+    if (mounted) localStorage.setItem("sidebar-open", String(sidebarOpen));
+  }, [sidebarOpen, mounted]);
 
   // Persist whale threshold
   useEffect(() => {
-    localStorage.setItem("whale-threshold", String(whaleThreshold));
-  }, [whaleThreshold]);
+    if (mounted) localStorage.setItem("whale-threshold", String(whaleThreshold));
+  }, [whaleThreshold, mounted]);
 
   // Handle incoming WebSocket messages
   const handleMessage = useCallback(

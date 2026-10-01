@@ -125,6 +125,13 @@ export const useDashboardStore = create<DashboardState>()(
         activeSymbol: state.activeSymbol,
         activeInterval: state.activeInterval,
       }),
+      // Skip automatic hydration to prevent SSR mismatch
+      skipHydration: true,
     }
   )
 );
+
+// Hydrate the store on client-side mount
+if (typeof window !== "undefined") {
+  useDashboardStore.persist.rehydrate();
+}
