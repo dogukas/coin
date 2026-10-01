@@ -65,61 +65,72 @@ export default function AiCopilot() {
       .reduce((sum, c) => sum + c.volume, 0) / 10 || 1;
     const volSpike = lastVolume > avgVolume * 1.5;
 
+    // Mathematical safety constraints for supports/resistances
+    const safeSupport = bbLower ? Math.min(price * 0.99, bbLower) : price * 0.98;
+    const safeResistance = bbUpper ? Math.max(price * 1.01, bbUpper) : price * 1.02;
+
     // AI Logic Engine
     if (score >= 65) {
       action = "BUY";
       type = "bullish";
       confidence = score;
-      // Ideal entry is on a slight pullback to VWAP, or market if already above
-      entry = (vwap && price > vwap) ? vwap : price;
-      // Target upper band or fixed 3%
-      target = (bbUpper && bbUpper > price) ? bbUpper : price * 1.03;
-      // Stop loss below lower band or 200 EMA
-      stopLoss = ema200 ? Math.min(ema200, bbLower || price * 0.97) : price * 0.97;
+      entry = price; // Trend is strong, enter at market
+      target = safeResistance;
+      stopLoss = safeSupport;
       
       if (volSpike) {
-        text = `Hacim patlamasıyla birlikte güçlü AL sinyali. Hedef noktasına doğru ivmelenme başladı. Kademeli giriş için ideal setup!`;
+        text = `Hacim patlamasıyla birlikte güçlü AL sinyali. Hedef noktasına doğru ivmelenme başladı.`;
       } else {
-        text = `Trend pozitif yönde. ${formatPrice(entry)} seviyesinden (VWAP/Destek) giriş yapılabilir. Stop-loss kurmayı unutmayın.`;
+        text = `Trend pozitif yönde. Mevcut fiyattan giriş yapılabilir. Stop-loss kurmayı unutmayın.`;
       }
     } else if (score <= 35) {
       action = "SELL";
       type = "bearish";
       confidence = 100 - score;
-      entry = price; // Selling at market
-      target = bbLower ? bbLower : price * 0.95;
-      stopLoss = (vwap && vwap > price) ? vwap : price * 1.03;
+      entry = price; // Short entry or spot exit
+      target = safeSupport;
+      stopLoss = safeResistance;
       
       if (volSpike) {
         text = `Büyük bir satış dalgası var (Hacimli Düşüş). Bıçak düşerken tutulmaz. Zararı kesip nakite geçmek için son fırsatlar.`;
       } else {
-        text = `Satış baskısı hakim ve teknik göstergeler zayıf. Yeni alım yapmak için çok erken, hedeflere kadar düşüş sürebilir.`;
+        text = `Satış baskısı hakim ve teknik göstergeler zayıf. Düşüş hedeflere kadar sürebilir (Short fırsatı).`;
       }
     } else if (rsi >= 75) {
       action = "SELL";
       type = "warning";
       confidence = 80;
       entry = price;
-      target = vwap || price * 0.96;
-      stopLoss = price * 1.02;
-      text = `⚠️ Fiyat aşırı şişti (RSI > 75). Kâr satışı gelme olasılığı çok yüksek. Yeni alım tehlikeli, elinizdekileri satmayı düşünün.`;
+      target = safeSupport;
+      stopLoss = safeResistance;
+      text = `⚠️ Fiyat aşırı şişti (RSI > 75). Kâr satışı gelme olasılığı çok yüksek. Elinizdekileri satmayı düşünün.`;
     } else if (rsi <= 25) {
       action = "BUY";
       type = "bullish";
       confidence = 75;
       entry = price;
-      target = vwap || price * 1.04;
-      stopLoss = bbLower ? bbLower * 0.99 : price * 0.96;
+      target = safeResistance;
+      stopLoss = safeSupport;
       text = `Aşırı satım bölgesinde (RSI dipte). Tepki alımı gelmesi bekleniyor. Risk/ödül oranı açısından cazip bir GİRİŞ fırsatı.`;
     } else {
       action = "WAIT";
       type = "neutral";
       confidence = 50;
-      // Provide potential breakout/breakdown levels even in neutral state
-      entry = vwap || price;
-      target = bbUpper || price * 1.02;
-      stopLoss = bbLower || price * 0.98;
-      text = `Piyasa şu an yatay ve hacim düşük. Kırılım yönü belli değil. Alt banttan (${formatPrice(stopLoss)}) sekme veya VWAP (${formatPrice(entry)}) kırılımı beklenebilir.`;
+      entry = (vwap && vwap < price) ? vwap : price * 0.995; // Buy on dip
+      target = safeResistance;
+      stopLoss = safeSupport;
+      text = `Piyasa şu an yatay. Kırılım yönü belli değil. Geri çekilmelerde (Alt bant veya VWAP) alım fırsatı kollanabilir.`;
+    }
+
+    // STRICT LOGIC ENFORCEMENT (Prevents any logical errors on the UI)
+    if (action === "BUY" || action === "WAIT") {
+      // Long Trade Logic
+      if (target <= entry) target = entry * 1.02; // Target must be strictly higher
+      if (stopLoss >= entry) stopLoss = entry * 0.98; // Stop must be strictly lower
+    } else if (action === "SELL") {
+      // Short Trade Logic
+      if (target >= entry) target = entry * 0.98; // Target must be strictly lower
+      if (stopLoss <= entry) stopLoss = entry * 1.02; // Stop must be strictly higher
     }
 
     setAdvice({ text, action, type, entry, target, stopLoss, confidence });
