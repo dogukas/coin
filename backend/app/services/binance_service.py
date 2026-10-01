@@ -14,10 +14,12 @@ from websockets.exceptions import ConnectionClosed
 
 from app.core.config import settings
 import time
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 _GLOBAL_CACHE: Dict[str, dict] = {}
+_CACHE_LOCK = asyncio.Lock()
 
 def _get_cached(key: str, ttl: float) -> Optional[Any]:
     if key in _GLOBAL_CACHE:
@@ -74,9 +76,11 @@ class BinanceService:
         Returns list of candle dicts with keys: open_time, open, high, low, close, volume, close_time.
         """
         cache_key = f"klines_{symbol}_{interval}_{limit}"
-        cached = _get_cached(cache_key, 2.5)
-        if cached is not None:
-            return cached
+        
+        async with _CACHE_LOCK:
+            cached = _get_cached(cache_key, 5.0)
+            if cached is not None:
+                return cached
 
         session = await self._get_session()
         url = f"{settings.BINANCE_REST_URL}/api/v3/klines"
@@ -107,7 +111,8 @@ class BinanceService:
                         "taker_buy_volume": float(k[9]),
                     })
                 logger.info(f"Fetched {len(candles)} klines for {symbol} ({interval})")
-                _set_cached(cache_key, candles)
+                async with _CACHE_LOCK:
+                    _set_cached(cache_key, candles)
                 return candles
 
         except Exception as e:
@@ -153,9 +158,11 @@ class BinanceService:
         Returns list of dicts with: symbol, price, change_24h, volume_usd, high, low.
         """
         cache_key = "all_tickers"
-        cached = _get_cached(cache_key, 2.5)
-        if cached is not None:
-            return cached
+        
+        async with _CACHE_LOCK:
+            cached = _get_cached(cache_key, 10.0)
+            if cached is not None:
+                return cached
 
         session = await self._get_session()
         url = f"{settings.BINANCE_REST_URL}/api/v3/ticker/24hr"
@@ -196,7 +203,8 @@ class BinanceService:
                         continue
 
                 logger.info(f"Fetched {len(result)} USDT tickers from Binance")
-                _set_cached(cache_key, result)
+                async with _CACHE_LOCK:
+                    _set_cached(cache_key, result)
                 return result
         except Exception as e:
             logger.error(f"Error fetching all 24h tickers: {e}")
