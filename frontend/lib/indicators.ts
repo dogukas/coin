@@ -82,3 +82,113 @@ export function calculateBollingerBands(
 
   return { upper, middle, lower };
 }
+
+/**
+ * Calculates Relative Strength Index (RSI)
+ */
+export function calculateRSI(candles: CandleData[], period = 14): LinePoint[] {
+  const result: LinePoint[] = [];
+  if (!candles || candles.length <= period) return result;
+
+  let gains = 0;
+  let losses = 0;
+
+  // First Average Gain/Loss
+  for (let i = 1; i <= period; i++) {
+    const change = candles[i].close - candles[i - 1].close;
+    if (change >= 0) gains += change;
+    else losses -= change;
+  }
+
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+
+  // Initial RSI
+  let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+  let rsi = avgLoss === 0 ? 100 : 100 - 100 / (1 + rs);
+
+  result.push({
+    time: candles[period].time as Time,
+    value: Number(rsi.toFixed(2))
+  });
+
+  // Smoothed Moving Average
+  for (let i = period + 1; i < candles.length; i++) {
+    const change = candles[i].close - candles[i - 1].close;
+    const gain = change > 0 ? change : 0;
+    const loss = change < 0 ? -change : 0;
+
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+
+    rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    rsi = avgLoss === 0 ? 100 : 100 - 100 / (1 + rs);
+
+    result.push({
+      time: candles[i].time as Time,
+      value: Number(rsi.toFixed(2))
+    });
+  }
+
+  return result;
+}
+
+export interface MACDResult {
+  macdLine: LinePoint[];
+  signalLine: LinePoint[];
+  histogram: LinePoint[];
+}
+
+/**
+ * Calculates MACD (Moving Average Convergence Divergence)
+ */
+export function calculateMACD(candles: CandleData[], fast = 12, slow = 26, signal = 9): MACDResult {
+  const macdLine: LinePoint[] = [];
+  const signalLine: LinePoint[] = [];
+  const histogram: LinePoint[] = [];
+
+  if (!candles || candles.length < slow + signal) {
+    return { macdLine, signalLine, histogram };
+  }
+
+  const fastEma = calculateEMA(candles, fast);
+  const slowEma = calculateEMA(candles, slow);
+
+  // Align EMAs
+  const fastMap = new Map(fastEma.map(p => [p.time.toString(), p.value]));
+  
+  const macdValues: LinePoint[] = [];
+  for (const p of slowEma) {
+    const fVal = fastMap.get(p.time.toString());
+    if (fVal !== undefined) {
+      macdValues.push({
+        time: p.time,
+        value: fVal - p.value
+      });
+    }
+  }
+
+  // To calculate EMA of MACD, we need it in CandleData format
+  const macdCandles: CandleData[] = macdValues.map(p => ({
+    time: p.time,
+    open: p.value,
+    high: p.value,
+    low: p.value,
+    close: p.value,
+    volume: 0
+  }));
+
+  const sigEma = calculateEMA(macdCandles, signal);
+  const sigMap = new Map(sigEma.map(p => [p.time.toString(), p.value]));
+
+  for (const p of macdValues) {
+    macdLine.push({ time: p.time, value: Number(p.value.toFixed(4)) });
+    const sVal = sigMap.get(p.time.toString());
+    if (sVal !== undefined) {
+      signalLine.push({ time: p.time, value: Number(sVal.toFixed(4)) });
+      histogram.push({ time: p.time, value: Number((p.value - sVal).toFixed(4)) });
+    }
+  }
+
+  return { macdLine, signalLine, histogram };
+}

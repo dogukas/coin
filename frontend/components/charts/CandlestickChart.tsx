@@ -18,7 +18,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import { useDashboardStore } from "@/lib/store";
-import { calculateEMA, calculateBollingerBands } from "@/lib/indicators";
+import { calculateEMA, calculateBollingerBands, calculateRSI, calculateMACD } from "@/lib/indicators";
 import { formatNumber } from "@/lib/utils";
 
 export default function CandlestickChart() {
@@ -32,6 +32,12 @@ export default function CandlestickChart() {
   const bbUpperRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbMiddleRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
+  
+  // RSI & MACD References
+  const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const macdLineRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
 
   const lastCandleCountRef = useRef<number>(0);
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
@@ -68,7 +74,7 @@ export default function CandlestickChart() {
       },
       rightPriceScale: {
         borderColor: "rgba(255, 255, 255, 0.1)",
-        scaleMargins: { top: 0.1, bottom: 0.2 },
+        scaleMargins: { top: 0.05, bottom: 0.35 },
         autoScale: true,
       },
       timeScale: {
@@ -98,10 +104,49 @@ export default function CandlestickChart() {
     });
 
     chart.priceScale("volume_scale").applyOptions({
-      scaleMargins: {
-        top: 0.8,
-        bottom: 0,
-      },
+      scaleMargins: { top: 0.65, bottom: 0.35 },
+      visible: false,
+    });
+
+    // RSI Pane
+    const rsiSeries = chart.addSeries(LineSeries, {
+      color: "#9333ea", // Purple
+      lineWidth: 1.5,
+      priceScaleId: "rsi_scale",
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+
+    chart.priceScale("rsi_scale").applyOptions({
+      scaleMargins: { top: 0.70, bottom: 0.15 },
+      visible: false,
+    });
+
+    // MACD Pane
+    const macdHistSeries = chart.addSeries(HistogramSeries, {
+      priceScaleId: "macd_scale",
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    
+    const macdLineSeries = chart.addSeries(LineSeries, {
+      color: "#3b82f6", // Blue
+      lineWidth: 1.5,
+      priceScaleId: "macd_scale",
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    
+    const macdSignalSeries = chart.addSeries(LineSeries, {
+      color: "#f59e0b", // Orange
+      lineWidth: 1.5,
+      priceScaleId: "macd_scale",
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+
+    chart.priceScale("macd_scale").applyOptions({
+      scaleMargins: { top: 0.85, bottom: 0 },
       visible: false,
     });
 
@@ -166,7 +211,13 @@ export default function CandlestickChart() {
     ema200SeriesRef.current = ema200Series;
     bbUpperRef.current = bbUpper;
     bbMiddleRef.current = bbMiddle;
+    bbMiddleRef.current = bbMiddle;
     bbLowerRef.current = bbLower;
+    
+    rsiSeriesRef.current = rsiSeries;
+    macdHistRef.current = macdHistSeries;
+    macdLineRef.current = macdLineSeries;
+    macdSignalRef.current = macdSignalSeries;
 
     // Resize observer
     const resizeObserver = new ResizeObserver((entries) => {
@@ -200,6 +251,11 @@ export default function CandlestickChart() {
       bbUpperRef.current?.setData([]);
       bbMiddleRef.current?.setData([]);
       bbLowerRef.current?.setData([]);
+      
+      rsiSeriesRef.current?.setData([]);
+      macdHistRef.current?.setData([]);
+      macdLineRef.current?.setData([]);
+      macdSignalRef.current?.setData([]);
     }
   }, [activeSymbol, activeInterval]);
 
@@ -235,6 +291,15 @@ export default function CandlestickChart() {
       const ema50Data = calculateEMA(candles, 50);
       const ema200Data = calculateEMA(candles, 200);
       const bbData = calculateBollingerBands(candles, 20, 2.0);
+      const rsiData = calculateRSI(candles, 14);
+      const macdData = calculateMACD(candles);
+      
+      // MACD Histogram colors
+      const macdHistFormatted: HistogramData<Time>[] = macdData.histogram.map(p => ({
+        time: p.time,
+        value: p.value,
+        color: p.value >= 0 ? "rgba(0, 230, 118, 0.6)" : "rgba(239, 83, 80, 0.6)"
+      }));
 
       // Populate chart series
       candleSeriesRef.current.setData(candleData);
@@ -245,6 +310,11 @@ export default function CandlestickChart() {
       bbUpperRef.current?.setData(bbData.upper);
       bbMiddleRef.current?.setData(bbData.middle);
       bbLowerRef.current?.setData(bbData.lower);
+      
+      rsiSeriesRef.current?.setData(rsiData);
+      macdHistRef.current?.setData(macdHistFormatted);
+      macdLineRef.current?.setData(macdData.macdLine);
+      macdSignalRef.current?.setData(macdData.signalLine);
 
       lastCandleCountRef.current = candles.length;
 
@@ -293,6 +363,23 @@ export default function CandlestickChart() {
         }
         if (ind.bb_lower !== null) {
           bbLowerRef.current?.update({ time: lastTime, value: ind.bb_lower });
+        }
+        
+        // Note: RSI and MACD are not currently streamed continuously from Binance ticker.
+        // For a full production bot, we would calculate incremental RSI/MACD here or rely on the backend.
+        // We will just let the full update cycle (which happens on candle close) refresh them, or 
+        // we could calculate incremental ones here if needed.
+        if (ind.rsi !== null && ind.rsi !== undefined) {
+           rsiSeriesRef.current?.update({ time: lastTime, value: ind.rsi });
+        }
+        if (ind.macd_histogram !== null && ind.macd_line !== null && ind.macd_signal !== null) {
+           macdHistRef.current?.update({ 
+             time: lastTime, 
+             value: ind.macd_histogram, 
+             color: ind.macd_histogram >= 0 ? "rgba(0, 230, 118, 0.6)" : "rgba(239, 83, 80, 0.6)" 
+           });
+           macdLineRef.current?.update({ time: lastTime, value: ind.macd_line });
+           macdSignalRef.current?.update({ time: lastTime, value: ind.macd_signal });
         }
       }
     }
