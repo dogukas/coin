@@ -51,9 +51,40 @@ export default function IndicatorGrid() {
 
   // Volume ratio calculation
   let volRatioText = "—";
+  let volBarValue = 0;
   if (ind?.current_volume && ind?.volume_ma && ind.volume_ma > 0) {
     const ratio = (ind.current_volume / ind.volume_ma) * 100;
     volRatioText = `%${ratio.toFixed(0)} Oran`;
+    volBarValue = ratio;
+  }
+
+  // MACD Bar Calculation (-0.5% to +0.5% mapping)
+  let macdBarValue = 50;
+  if (ind?.macd_histogram !== undefined && ind?.macd_histogram !== null && currentPrice) {
+     const histPct = (ind.macd_histogram / currentPrice) * 100; 
+     macdBarValue = Math.max(0, Math.min(100, 50 + (histPct * 100)));
+  }
+
+  // EMA Bar Calculation (Price vs EMA50, -5% to +5% mapping)
+  let emaBarValue = 50;
+  if (currentPrice && ind?.ema_50) {
+    const diffPct = ((currentPrice - ind.ema_50) / ind.ema_50) * 100;
+    emaBarValue = Math.max(0, Math.min(100, 50 + (diffPct * 10)));
+  }
+
+  // Bollinger Bar Calculation (Price position between bands)
+  let bbBarValue = 50;
+  if (currentPrice && ind?.bb_upper && ind?.bb_lower) {
+    const range = ind.bb_upper - ind.bb_lower;
+    if (range > 0) {
+      bbBarValue = Math.max(0, Math.min(100, ((currentPrice - ind.bb_lower) / range) * 100));
+    }
+  }
+
+  // VWAP Bar Calculation (-3% to +3% mapping)
+  let vwapBarValue = 50;
+  if (vwapDiffPct !== null) {
+    vwapBarValue = Math.max(0, Math.min(100, 50 + (vwapDiffPct * (50/3))));
   }
 
   return (
@@ -88,6 +119,9 @@ export default function IndicatorGrid() {
         }
         status={ind?.macd_trend === "bullish" ? "YÜKSELİŞ" : ind?.macd_trend === "bearish" ? "DÜŞÜŞ" : "—"}
         color={ind?.macd_trend === "bullish" ? "#00e676" : ind?.macd_trend === "bearish" ? "#ef5350" : "#9ca3af"}
+        barValue={macdBarValue}
+        barMax={100}
+        barGradient={macdBarValue >= 50 ? "#66bb6a, #00e676" : "#ef5350, #ff1744"}
       />
 
       {/* 3. EMA Trend Card */}
@@ -114,6 +148,9 @@ export default function IndicatorGrid() {
             ? "#ef5350"
             : "#9ca3af"
         }
+        barValue={emaBarValue}
+        barMax={100}
+        barGradient={emaBarValue >= 50 ? "#66bb6a, #00e676" : "#ef5350, #ff1744"}
       />
 
       {/* 4. Bollinger Bands Card */}
@@ -128,6 +165,9 @@ export default function IndicatorGrid() {
         }
         status={bbStatus}
         color={bbColor}
+        barValue={bbBarValue}
+        barMax={100}
+        barGradient={bbBarValue > 80 ? "#ef5350, #ff1744" : bbBarValue < 20 ? "#66bb6a, #00e676" : "#ffc107, #ffab00"}
       />
 
       {/* 5. VWAP Card */}
@@ -138,6 +178,9 @@ export default function IndicatorGrid() {
         subInfo={ind?.vwap ? "Günlük Hacim Ağır. Ort." : undefined}
         status={vwapStatus}
         color={vwapColor}
+        barValue={vwapBarValue}
+        barMax={100}
+        barGradient={vwapBarValue >= 50 ? "#66bb6a, #00e676" : "#ef5350, #ff1744"}
       />
 
       {/* 6. Volume Card */}
@@ -166,6 +209,9 @@ export default function IndicatorGrid() {
             ? "#00e676"
             : "#ef5350"
         }
+        barValue={Math.min(200, volBarValue)}
+        barMax={200}
+        barGradient={volBarValue > 100 ? "#00e676, #66bb6a" : "#ffc107, #ff9800"}
       />
     </div>
       
