@@ -106,8 +106,8 @@ export default function PumpAlerts() {
             }
           });
         }
-      } catch (e) {
-        console.error("Pump alert fetch error", e);
+      } catch {
+        // Silently ignore — backend may be unreachable
       }
     };
 

@@ -5,11 +5,9 @@ import { Bot, Sparkles, AlertTriangle, TrendingUp, TrendingDown } from "lucide-r
 import { useDashboardStore } from "@/lib/store";
 
 export default function AiCopilot() {
-  const { activeSymbol, signalData, candles } = useDashboardStore((s) => ({
-    activeSymbol: s.activeSymbol,
-    signalData: s.signalData,
-    candles: s.candles,
-  }));
+  const activeSymbol = useDashboardStore((s) => s.activeSymbol);
+  const signalData = useDashboardStore((s) => s.signalData);
+  const candles = useDashboardStore((s) => s.candles);
 
   const [advice, setAdvice] = useState<{
     text: string;
