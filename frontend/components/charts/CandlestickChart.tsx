@@ -111,7 +111,7 @@ export default function CandlestickChart() {
     // RSI Pane
     const rsiSeries = chart.addSeries(LineSeries, {
       color: "#9333ea", // Purple
-      lineWidth: 1.5,
+      lineWidth: 2,
       priceScaleId: "rsi_scale",
       priceLineVisible: false,
       lastValueVisible: false,
@@ -131,7 +131,7 @@ export default function CandlestickChart() {
     
     const macdLineSeries = chart.addSeries(LineSeries, {
       color: "#3b82f6", // Blue
-      lineWidth: 1.5,
+      lineWidth: 2,
       priceScaleId: "macd_scale",
       priceLineVisible: false,
       lastValueVisible: false,
@@ -139,7 +139,7 @@ export default function CandlestickChart() {
     
     const macdSignalSeries = chart.addSeries(LineSeries, {
       color: "#f59e0b", // Orange
-      lineWidth: 1.5,
+      lineWidth: 2,
       priceScaleId: "macd_scale",
       priceLineVisible: false,
       lastValueVisible: false,

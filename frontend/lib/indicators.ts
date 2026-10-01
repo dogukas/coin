@@ -170,7 +170,7 @@ export function calculateMACD(candles: CandleData[], fast = 12, slow = 26, signa
 
   // To calculate EMA of MACD, we need it in CandleData format
   const macdCandles: CandleData[] = macdValues.map(p => ({
-    time: p.time,
+    time: p.time as number,
     open: p.value,
     high: p.value,
     low: p.value,
