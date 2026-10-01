@@ -1,12 +1,7 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { Toaster } from "sonner";
 import "./globals.css";
-
-const PumpAlerts = dynamic(
-  () => import("@/components/dashboard/PumpAlerts"),
-  { ssr: false }
-);
+import ClientProviders from "@/components/ClientProviders";
 
 export const metadata: Metadata = {
   title: "Crypto Signal Dashboard | Gerçek Zamanlı Analiz",
@@ -46,8 +41,8 @@ export default function RootLayout({
         {/* Toast Notifications */}
         <Toaster position="top-right" theme="dark" richColors />
         
-        {/* Global Pump/Dump Detector (client-only) */}
-        <PumpAlerts />
+        {/* Global Client-side Providers (Pump Alerts etc.) */}
+        <ClientProviders />
       </body>
     </html>
   );
