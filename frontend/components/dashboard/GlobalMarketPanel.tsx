@@ -91,12 +91,21 @@ export default function GlobalMarketPanel() {
     ? Math.max(...pressureData.map(d => Math.max(d.buy_volume, d.sell_volume)))
     : 1;
 
-  // Format volume for display
+  // Format volume for display (abbreviated)
   const formatVol = (v: number): string => {
     if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(1)}B`;
     if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
     if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
     return v.toFixed(0);
+  };
+
+  // Format exact money amounts with commas
+  const formatExactMoney = (v: number): string => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0
+    }).format(v);
   };
 
   // Calculate Fear/Greed gauge rotation (-90deg to 90deg)
@@ -223,18 +232,18 @@ export default function GlobalMarketPanel() {
             Alıcı / Satıcı ({activeSymbol.replace("USDT", "")})
           </div>
           <span className="text-[10px] font-black tabular-nums bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-gray-300 drop-shadow-sm">
-            ${formatVol(totalVol)}
+            {formatExactMoney(totalVol)}
           </span>
         </h3>
         
         <div className="flex items-center justify-between text-[10px] font-black mb-3">
           <div className="flex items-center gap-1.5 bg-emerald-500/5 border border-emerald-500/10 px-2 py-1 rounded shadow-sm">
             <span className="text-gray-500 uppercase">Alıcı:</span>
-            <span className="text-emerald-400 drop-shadow-sm">${formatVol(totalBuy)}</span>
+            <span className="text-emerald-400 drop-shadow-sm">{formatExactMoney(totalBuy)}</span>
           </div>
           <div className="flex items-center gap-1.5 bg-red-500/5 border border-red-500/10 px-2 py-1 rounded shadow-sm">
             <span className="text-gray-500 uppercase">Satıcı:</span>
-            <span className="text-red-400 drop-shadow-sm">${formatVol(totalSell)}</span>
+            <span className="text-red-400 drop-shadow-sm">{formatExactMoney(totalSell)}</span>
           </div>
         </div>
 
@@ -248,7 +257,7 @@ export default function GlobalMarketPanel() {
             <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-white/10 -translate-y-1/2" />
             {pressureData.map((data, i) => (
               <div key={i} className="flex-1 flex flex-col items-center justify-center gap-[1px] h-full z-10 hover:opacity-80 cursor-crosshair transition-opacity"
-                title={`Alıcı: $${formatVol(data.buy_volume)} | Satıcı: $${formatVol(data.sell_volume)} | %${data.buy_pct.toFixed(1)} Alım`}
+                title={`Alıcı: ${formatExactMoney(data.buy_volume)} | Satıcı: ${formatExactMoney(data.sell_volume)} | %${data.buy_pct.toFixed(1)} Alım`}
               >
                 {/* Buy Volume (Top - Green) */}
                 <div 
