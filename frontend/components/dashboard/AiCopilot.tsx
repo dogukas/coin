@@ -115,8 +115,11 @@ export default function AiCopilot() {
       action = "WAIT";
       type = "neutral";
       confidence = 50;
-      entry = undefined; target = undefined; stopLoss = undefined;
-      text = `Piyasa şu an yatay ve hacim düşük. Kırılım yönü belli değil (Konsolidasyon). Net bir sinyal gelene kadar NAKİTTE KAL.`;
+      // Provide potential breakout/breakdown levels even in neutral state
+      entry = vwap || price;
+      target = bbUpper || price * 1.02;
+      stopLoss = bbLower || price * 0.98;
+      text = `Piyasa şu an yatay ve hacim düşük. Kırılım yönü belli değil. Alt banttan (${formatPrice(stopLoss)}) sekme veya VWAP (${formatPrice(entry)}) kırılımı beklenebilir.`;
     }
 
     setAdvice({ text, action, type, entry, target, stopLoss, confidence });
