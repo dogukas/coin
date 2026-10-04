@@ -266,7 +266,7 @@ def _is_valid_usdt_symbol(sym: str) -> bool:
 
 
 def _ticker_store_healthy() -> bool:
-    return len(_TICKERS) >= 100 and time.time() - _TICKERS_LAST_MSG < 30
+    return len(_TICKERS) >= 10 and time.time() - _TICKERS_LAST_MSG < 30
 
 
 class BinanceService:
