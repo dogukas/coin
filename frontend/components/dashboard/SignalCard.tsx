@@ -16,7 +16,7 @@ export default function SignalCard() {
   const TrendIcon =
     level === "strong_buy" || level === "buy"
       ? TrendingUp
-      : level === "sell" || level === "strong_sell"
+      : level === "sell"
       ? TrendingDown
       : Minus;
 
