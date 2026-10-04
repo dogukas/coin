@@ -159,6 +159,55 @@ async def _fetch_bybit_klines(session: aiohttp.ClientSession, symbol: str, inter
         logger.error(f"Bybit fallback exception for {symbol}: {e}")
     return None
 
+async def _fetch_mexc_klines(session: aiohttp.ClientSession, symbol: str, interval: str, limit: int) -> Optional[List[dict]]:
+    """Fetch klines from MEXC as a final fallback (No US IP blocks, no shared IP rate limits)."""
+    imap = {
+        "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m",
+        "1h": "60m", "2h": "2h", "4h": "4h", "6h": "6h", "12h": "12h",
+        "1d": "1d", "1w": "1W", "1M": "1M"
+    }
+    m_interval = imap.get(interval, "15m")
+    url = "https://api.mexc.com/api/v3/klines"
+    params = {
+        "symbol": symbol.upper(),
+        "interval": m_interval,
+        "limit": limit
+    }
+    try:
+        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                raw_list = await resp.json()
+                candles = []
+                for k in raw_list:
+                    open_p = float(k[1])
+                    close_p = float(k[4])
+                    vol = float(k[5])
+                    
+                    # Approximate taker buy volume based on candle direction
+                    if close_p > open_p:
+                        taker_buy = vol * 0.55
+                    elif close_p < open_p:
+                        taker_buy = vol * 0.45
+                    else:
+                        taker_buy = vol * 0.50
+                        
+                    candles.append({
+                        "open_time": int(k[0]),
+                        "open": open_p,
+                        "high": float(k[2]),
+                        "low": float(k[3]),
+                        "close": close_p,
+                        "volume": vol,
+                        "close_time": int(k[6]),
+                        "taker_buy_volume": taker_buy,
+                    })
+                return candles
+            else:
+                text = await resp.text()
+                logger.error(f"MEXC fallback failed [{resp.status}]: {text[:200]}")
+    except Exception as e:
+        logger.error(f"MEXC fallback exception for {symbol}: {e}")
+    return None
 
 # ══════════════════════════════════════════════
 # Rate-limit / ban protection
@@ -401,6 +450,12 @@ class BinanceService:
                 if bybit_candles:
                     candles = bybit_candles
                     logger.info(f"Loaded {len(candles)} klines for {symbol} ({interval}) from BYBIT (Fallback)")
+                else:
+                    # ── MEXC FALLBACK ──
+                    mexc_candles = await _fetch_mexc_klines(session, symbol, interval, limit)
+                    if mexc_candles:
+                        candles = mexc_candles
+                        logger.info(f"Loaded {len(candles)} klines for {symbol} ({interval}) from MEXC (Fallback)")
 
             if candles:
                 _set_cached(cache_key, candles)
