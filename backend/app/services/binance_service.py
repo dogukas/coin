@@ -25,6 +25,13 @@ class BinanceService:
         self._running = False
         self._session: Optional[aiohttp.ClientSession] = None
         self._reconnect_delays: Dict[str, float] = {}
+        
+        # Caching to prevent IP bans
+        self._ticker_cache: List[dict] = []
+        self._ticker_cache_time: float = 0
+        
+        self._pressure_cache: List[dict] = []
+        self._pressure_cache_time: float = 0
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create an aiohttp session."""
@@ -130,7 +137,12 @@ class BinanceService:
         """
         Fetch 24h ticker statistics for ALL symbols from Binance.
         Returns list of dicts with: symbol, price, change_24h, volume_usd, high, low.
+        Uses a 10-second cache to prevent IP bans.
         """
+        import time
+        if time.time() - self._ticker_cache_time < 10 and self._ticker_cache:
+            return self._ticker_cache
+
         session = await self._get_session()
         url = f"{settings.BINANCE_REST_URL}/api/v3/ticker/24hr"
 
@@ -170,6 +182,8 @@ class BinanceService:
                         continue
 
                 logger.info(f"Fetched {len(result)} USDT tickers from Binance")
+                self._ticker_cache = result
+                self._ticker_cache_time = time.time()
                 return result
         except Exception as e:
             logger.error(f"Error fetching all 24h tickers: {e}")
@@ -178,11 +192,16 @@ class BinanceService:
     async def fetch_buy_pressure_scan(self, limit: int = 20) -> List[dict]:
         """
         Scan top volume coins and rank them by taker buy pressure in the last 1 hour.
+        Uses a 30-second cache to prevent massive kline request spam.
         """
+        import time
+        if time.time() - self._pressure_cache_time < 30 and self._pressure_cache:
+            return self._pressure_cache[:limit]
+
         tickers = await self.fetch_all_24h_tickers()
-        # Sort by volume and get top 100 for scanning
+        # Sort by volume and get top 50 for scanning (reduced from 100 to save weight)
         tickers.sort(key=lambda x: x["volume_usd"], reverse=True)
-        top_100 = tickers[:100]
+        top_50 = tickers[:50]
 
         results = []
         tasks = []
@@ -205,7 +224,7 @@ class BinanceService:
                         }
                 return None
 
-        tasks = [fetch_and_calc(t) for t in top_100]
+        tasks = [fetch_and_calc(t) for t in top_50]
         results_raw = await asyncio.gather(*tasks, return_exceptions=True)
         
         for res in results_raw:
@@ -214,6 +233,10 @@ class BinanceService:
                 
         # Sort by buy pressure descending
         results.sort(key=lambda x: x["buy_pressure_pct"], reverse=True)
+        
+        self._pressure_cache = results
+        self._pressure_cache_time = time.time()
+        
         return results[:limit]
 
     # ──────────────────────────────────────────────
