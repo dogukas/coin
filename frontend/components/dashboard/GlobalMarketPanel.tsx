@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Activity, Flame, BarChart3, Loader2 } from "lucide-react";
 import { useDashboardStore } from "@/lib/store";
 import { API_URL } from "@/lib/utils";
+import TradeTracker from "./TradeTracker";
 
 interface PressureBar {
   time: number;
@@ -131,7 +132,7 @@ export default function GlobalMarketPanel() {
   const maxCoinChange = trendingCoins.length > 0 ? Math.max(...trendingCoins.map(c => c.change_24h)) : 1;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
       
       {/* 1. Piyasa Durumu */}
       <section className={cardClass} aria-label="Piyasa durumu">
@@ -221,50 +222,52 @@ export default function GlobalMarketPanel() {
         </ul>
       </section>
 
-      {/* 3. Alıcı / Satıcı (QNT) */}
+      {/* 3. İşlem Takipçisi (Trade Tracker) */}
+      <TradeTracker />
+
+      {/* 4. Alıcı / Satıcı (QNT) */}
       <section className={cardClass} aria-label="Alıcı satıcı">
         <div className={chClass}>
           <BarChart3 className="w-4 h-4 flex-none text-[#6aa8ff]" strokeWidth={1.8} />
           <h2 className={h2Class}>Alıcı / Satıcı ({activeSymbol.replace("USDT", "")})</h2>
-          <span className="ml-auto font-mono text-[11px] font-semibold text-[var(--ink)] bg-white/5 border border-[var(--line)] px-2 py-1 rounded-[7px] whitespace-nowrap">
-            {formatExactMoney(totalVol)}
-          </span>
         </div>
         
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-[10px] p-2 px-2.5 border border-[rgba(47,214,161,0.3)] bg-[rgba(47,214,161,0.07)] text-[var(--gain)] min-w-0">
-            <small className="block text-[10px] tracking-[0.1em] uppercase mb-1">Alıcı</small>
-            <b className="font-mono text-[13px] font-semibold break-all">{formatExactMoney(totalBuy)}</b>
+        <div className="flex flex-col gap-2 mt-2">
+          <div className="flex justify-between items-center text-[10px] tracking-[0.1em] uppercase">
+            <span className="text-[var(--gain)]">Alıcı</span>
+            <span className="text-[var(--loss)]">Satıcı</span>
           </div>
-          <div className="rounded-[10px] p-2 px-2.5 border border-[rgba(255,90,110,0.3)] bg-[rgba(255,90,110,0.07)] text-[var(--loss)] min-w-0">
-            <small className="block text-[10px] tracking-[0.1em] uppercase mb-1">Satıcı</small>
-            <b className="font-mono text-[13px] font-semibold break-all">{formatExactMoney(totalSell)}</b>
+          
+          <div className="flex h-3 rounded-full overflow-hidden gap-[2px]">
+            <i className="block h-full bg-[var(--gain)]" style={{ width: `${buyPct}%` }} />
+            <i className="block h-full bg-[var(--loss)]" style={{ width: `${100 - buyPct}%` }} />
           </div>
-        </div>
-        
-        <div className="flex h-2 rounded-full overflow-hidden gap-[2px]">
-          <i className="block h-full bg-[var(--gain)]" style={{ width: `${buyPct}%` }} />
-          <i className="block h-full bg-[var(--loss)]" style={{ width: `${100 - buyPct}%` }} />
+          
+          <div className="flex justify-between items-center font-mono text-[11px] font-semibold mt-1">
+            <span className="text-[var(--gain)]">{buyPct.toFixed(1)}%</span>
+            <span className="text-[var(--ink)]">{formatExactMoney(totalVol)}</span>
+            <span className="text-[var(--loss)]">{(100 - buyPct).toFixed(1)}%</span>
+          </div>
         </div>
 
-        <div className="mt-auto pt-2">
+        <div className="mt-auto pt-3">
           {pressureData.length > 0 ? (
-            <svg viewBox="0 0 320 96" className="w-full h-auto block">
-              <line x1="0" x2="320" y1="48" y2="48" stroke="var(--line)" strokeWidth="1" />
+            <svg viewBox="0 0 320 60" className="w-full h-auto block">
+              <line x1="0" x2="320" y1="30" y2="30" stroke="var(--line)" strokeWidth="1" />
               {pressureData.map((d, i) => {
                 const w = 320 / pressureData.length;
-                const bH = Math.max(2, (d.buy_volume / maxBarVal) * 44);
-                const sH = Math.max(2, (d.sell_volume / maxBarVal) * 44);
+                const bH = Math.max(2, (d.buy_volume / maxBarVal) * 26);
+                const sH = Math.max(2, (d.sell_volume / maxBarVal) * 26);
                 return (
                   <g key={i}>
-                    <rect x={i * w + 1} y={48 - bH} width={w - 2} height={bH - 1} rx={w > 4 ? 2 : 0} fill="var(--gain)" />
-                    <rect x={i * w + 1} y={49} width={w - 2} height={sH} rx={w > 4 ? 2 : 0} fill="var(--loss)" />
+                    <rect x={i * w + 1} y={30 - bH} width={w - 2} height={bH - 1} rx={w > 4 ? 2 : 0} fill="var(--gain)" />
+                    <rect x={i * w + 1} y={31} width={w - 2} height={sH} rx={w > 4 ? 2 : 0} fill="var(--loss)" />
                   </g>
                 );
               })}
             </svg>
           ) : (
-            <div className="h-[96px] w-full flex items-center justify-center text-xs text-gray-500">
+            <div className="h-[60px] w-full flex items-center justify-center text-[10px] text-[var(--ink-faint)]">
                Veri bekleniyor...
             </div>
           )}
