@@ -127,8 +127,11 @@ async def _fetch_bybit_klines(session: aiohttp.ClientSession, symbol: str, inter
         "interval": b_interval,
         "limit": limit
     }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     try:
-        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+        async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 if data.get("retCode") == 0 and "list" in data.get("result", {}):
@@ -149,8 +152,11 @@ async def _fetch_bybit_klines(session: aiohttp.ClientSession, symbol: str, inter
                             "taker_buy_volume": float(k[5]) / 2, # Approximation since missing
                         })
                     return candles
+            else:
+                text = await resp.text()
+                logger.error(f"Bybit fallback failed [{resp.status}]: {text[:200]}")
     except Exception as e:
-        logger.debug(f"Bybit fallback failed for {symbol}: {e}")
+        logger.error(f"Bybit fallback exception for {symbol}: {e}")
     return None
 
 
