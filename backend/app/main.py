@@ -3,6 +3,7 @@ FastAPI application entry point.
 Configures CORS, registers routes, and manages lifecycle events.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -32,12 +33,15 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info(f"📊 Tracking symbols: {settings.symbols_list}")
     logger.info(f"⏱  Default interval: {settings.DEFAULT_INTERVAL}")
+    # Live all-market tickers via ONE WebSocket (replaces 80-weight REST calls)
+    ticker_task = asyncio.create_task(binance_service.run_ticker_stream())
     logger.info("✅ Backend ready")
 
     yield
 
     # ── Shutdown ──
     logger.info("🛑 Shutting down...")
+    ticker_task.cancel()
     await binance_service.close()
     logger.info("👋 Goodbye")
 
@@ -74,4 +78,5 @@ if __name__ == "__main__":
         host=settings.HOST,
         port=settings.PORT,
         reload=True,
+        workers=1,  # keep 1: cache & rate limiter are per-process
     )

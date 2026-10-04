@@ -9,7 +9,11 @@ import aiohttp
 from fastapi import APIRouter, Query
 
 from app.core.config import settings
-from app.services.binance_service import binance_service
+from app.services.binance_service import (
+    binance_service,
+    get_or_compute,
+    TTL_KLINES_MTF,
+)
 from app.services.indicator_service import indicator_service
 from app.services.signal_service import signal_service
 from app.models.candle import CandleSchema, SignalPayload, SymbolInfo, MarketCoin, MarketOverview
@@ -17,11 +21,20 @@ from app.models.candle import CandleSchema, SignalPayload, SymbolInfo, MarketCoi
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["market"])
 
+# Shared (all users) result cache durations for heavy scan endpoints
+TTL_TA_CUBES = 60.0
+TTL_PUMP_ALERTS = 45.0
+TTL_FEAR_GREED = 300.0
+
 
 @router.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "ok", "service": "crypto-signal-engine"}
+    """Health check endpoint (+ Binance rate-limit status)."""
+    return {
+        "status": "ok",
+        "service": "crypto-signal-engine",
+        "binance": binance_service.rate_limit_status(),
+    }
 
 
 @router.get("/symbols", response_model=List[SymbolInfo])
@@ -167,7 +180,7 @@ async def get_signal(
     # Fetch multi-timeframe data for scoring
     mtf_data = {}
     for tf in ["1h", "4h"]:
-        tf_candles = await binance_service.fetch_klines(symbol, tf, limit=200)
+        tf_candles = await binance_service.fetch_klines(symbol, tf, limit=200, ttl=TTL_KLINES_MTF)
         if tf_candles:
             tf_df = indicator_service.build_dataframe(tf_candles)
             mtf_data[tf] = tf_df
@@ -180,7 +193,13 @@ import asyncio
 
 @router.get("/market/ta-cubes", response_model=List[TACubeData])
 async def get_ta_cubes(limit: int = Query(default=24, ge=1, le=50)):
-    """Fetch TA and Signal data for top coins as 'Cubes'."""
+    """Fetch TA and Signal data for top coins as 'Cubes' (shared 60s cache)."""
+    return await get_or_compute(
+        f"ta_cubes_{limit}", TTL_TA_CUBES, lambda: _compute_ta_cubes(limit)
+    )
+
+
+async def _compute_ta_cubes(limit: int) -> List[TACubeData]:
     tickers = await binance_service.fetch_all_24h_tickers()
     
     # Sort by volume and get top
@@ -188,7 +207,7 @@ async def get_ta_cubes(limit: int = Query(default=24, ge=1, le=50)):
     top_coins = tickers[:limit]
     
     results = []
-    sem = asyncio.Semaphore(5)
+    sem = asyncio.Semaphore(4)
     
     async def process_coin(t):
         symbol = t["symbol"]
@@ -198,7 +217,7 @@ async def get_ta_cubes(limit: int = Query(default=24, ge=1, le=50)):
         
         async with sem:
             # 1. Fetch 15m candles
-            candles = await binance_service.fetch_klines(symbol, "15m", limit=200)
+            candles = await binance_service.fetch_klines(symbol, "15m", limit=200, ttl=TTL_TA_CUBES)
             if not candles or len(candles) < 50:
                 return None
                 
@@ -253,7 +272,7 @@ async def get_buy_sell_pressure(
     This represents actual market pressure — not mock data.
     """
     symbol = symbol.upper()
-    candles = await binance_service.fetch_klines(symbol, "1h", limit=limit)
+    candles = await binance_service.fetch_klines(symbol, "1h", limit=limit, ttl=60.0)
     if not candles:
         return []
 
@@ -288,7 +307,16 @@ async def get_pump_alerts(
     Compares current price with the opening price of the last 5-minute candle
     and the price 15 minutes ago to detect rapid movements.
     Returns list of coins with significant short-term changes.
+    Result is shared by all users (45s cache).
     """
+    return await get_or_compute(
+        f"pump_alerts_{min_change}_{limit}",
+        TTL_PUMP_ALERTS,
+        lambda: _compute_pump_alerts(min_change, limit),
+    )
+
+
+async def _compute_pump_alerts(min_change: float, limit: int) -> list:
     # Get top coins by volume
     all_tickers = await binance_service.fetch_all_24h_tickers()
     if not all_tickers:
@@ -300,14 +328,14 @@ async def get_pump_alerts(
     top_coins = filtered[:limit]
 
     alerts = []
-    sem = asyncio.Semaphore(10)
+    sem = asyncio.Semaphore(5)
 
     async def check_coin(ticker):
         symbol = ticker["symbol"]
         async with sem:
             try:
                 # Fetch last 4 x 5-minute candles (= 20 min lookback)
-                candles = await binance_service.fetch_klines(symbol, "5m", limit=4)
+                candles = await binance_service.fetch_klines(symbol, "5m", limit=4, ttl=TTL_PUMP_ALERTS)
                 if not candles or len(candles) < 2:
                     return None
 
@@ -379,7 +407,12 @@ async def get_fear_greed():
     """
     Proxy for Fear & Greed Index API (avoids CORS on frontend).
     Returns value, classification in Turkish, and global market stats.
+    Shared 5 min cache.
     """
+    return await get_or_compute("fear_greed", TTL_FEAR_GREED, _compute_fear_greed)
+
+
+async def _compute_fear_greed() -> dict:
     session = await binance_service._get_session()
     
     # Classification translation map

@@ -11,13 +11,18 @@ from typing import Dict, List, Set
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 from app.core.config import settings
-from app.services.binance_service import binance_service
+from app.services.binance_service import binance_service, TTL_KLINES_MTF
 from app.services.indicator_service import indicator_service
 from app.services.signal_service import signal_service
 from app.models.candle import MarketUpdate, CandleSchema
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Stop Binance streams this many seconds after the last client leaves
+IDLE_STREAM_GRACE = 60
+# Hard cap on concurrent kline streams (protects against WS connection limits)
+MAX_KLINE_STREAMS = 30
 
 
 class ConnectionManager:
@@ -41,9 +46,16 @@ class ConnectionManager:
 
         # Start Binance streams if not already running for this symbol_interval
         if key not in self._stream_tasks or self._stream_tasks[key].done():
-            self._stream_tasks[key] = asyncio.create_task(
-                self._start_binance_stream(symbol, interval)
-            )
+            running = sum(1 for t in self._stream_tasks.values() if not t.done())
+            if running >= MAX_KLINE_STREAMS:
+                self._stop_idle_streams_now()
+                running = sum(1 for t in self._stream_tasks.values() if not t.done())
+            if running < MAX_KLINE_STREAMS:
+                self._stream_tasks[key] = asyncio.create_task(
+                    self._start_binance_stream(symbol, interval)
+                )
+            else:
+                logger.warning(f"Kline stream cap reached ({MAX_KLINE_STREAMS}); {key} served from cache only")
         
         # Start Binance aggTrade stream if not already running for this symbol
         if symbol not in self._trade_tasks or self._trade_tasks[symbol].done():
@@ -55,11 +67,50 @@ class ConnectionManager:
             )
 
     def disconnect(self, websocket: WebSocket, symbol: str, interval: str):
-        """Remove a WebSocket connection."""
+        """Remove a WebSocket connection and schedule idle stream cleanup."""
         key = f"{symbol}_{interval}"
         if key in self.active_connections:
             self.active_connections[key].discard(websocket)
             logger.info(f"Client disconnected from {key}. Remaining: {len(self.active_connections[key])}")
+            if not self.active_connections[key]:
+                try:
+                    asyncio.get_running_loop().create_task(self._stop_if_idle(symbol, interval))
+                except RuntimeError:
+                    pass
+
+    def _symbol_has_clients(self, symbol: str) -> bool:
+        return any(
+            clients for k, clients in self.active_connections.items()
+            if k.startswith(f"{symbol}_")
+        )
+
+    def _stop_stream(self, symbol: str, interval: str):
+        key = f"{symbol}_{interval}"
+        task = self._stream_tasks.pop(key, None)
+        if task and not task.done():
+            task.cancel()
+            logger.info(f"Stopped idle kline stream {key}")
+        self._candle_cache.pop(key, None)
+        self.active_connections.pop(key, None)
+
+        if not self._symbol_has_clients(symbol):
+            trade_task = self._trade_tasks.pop(symbol, None)
+            if trade_task and not trade_task.done():
+                trade_task.cancel()
+                logger.info(f"Stopped idle aggTrade stream {symbol}")
+            self._mtf_cache.pop(symbol, None)
+
+    async def _stop_if_idle(self, symbol: str, interval: str):
+        await asyncio.sleep(IDLE_STREAM_GRACE)
+        key = f"{symbol}_{interval}"
+        if not self.active_connections.get(key):
+            self._stop_stream(symbol, interval)
+
+    def _stop_idle_streams_now(self):
+        for key in list(self._stream_tasks.keys()):
+            if not self.active_connections.get(key):
+                symbol, interval = key.rsplit("_", 1)
+                self._stop_stream(symbol, interval)
 
     async def broadcast(self, symbol: str, interval: str, message: str):
         """Broadcast message to all connected clients for a symbol_interval."""
@@ -100,7 +151,7 @@ class ConnectionManager:
         # Also fetch multi-timeframe data
         mtf_data = {}
         for tf in ["1h", "4h"]:
-            tf_candles = await binance_service.fetch_klines(symbol, tf, limit=200)
+            tf_candles = await binance_service.fetch_klines(symbol, tf, limit=200, ttl=TTL_KLINES_MTF)
             if tf_candles:
                 tf_df = indicator_service.build_dataframe(tf_candles)
                 mtf_data[tf] = tf_df
@@ -243,7 +294,7 @@ class ConnectionManager:
         if not mtf_data:
             mtf_data = {}
             for tf in ["1h", "4h"]:
-                tf_candles = await binance_service.fetch_klines(symbol, tf, limit=200)
+                tf_candles = await binance_service.fetch_klines(symbol, tf, limit=200, ttl=TTL_KLINES_MTF)
                 if tf_candles:
                     tf_df = indicator_service.build_dataframe(tf_candles)
                     mtf_data[tf] = tf_df

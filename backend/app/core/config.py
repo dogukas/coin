@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     BINANCE_REST_URL: str = "https://data-api.binance.vision"
     BINANCE_WS_URL: str = "wss://data-stream.binance.vision/ws"
 
+    # Self-imposed REST weight budget per minute (Binance hard limit: 6000/IP).
+    # Kept low because Render outbound IPs are shared with other tenants.
+    BINANCE_WEIGHT_BUDGET: int = 1200
+
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./candles.db"
 
