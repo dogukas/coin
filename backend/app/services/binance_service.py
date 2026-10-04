@@ -109,40 +109,49 @@ async def get_or_compute(key: str, ttl: float, factory: Callable[[], Awaitable[A
 
 
 # ══════════════════════════════════════════════
-# Proxy Support (For Shared IP Bans)
+# Bybit Fallback API (For Shared IP Bans)
 # ══════════════════════════════════════════════
 
-_PROXIES: List[str] = []
-_PROXY_FETCH_LOCK = asyncio.Lock()
-
-async def _fetch_proxies(session: aiohttp.ClientSession):
-    global _PROXIES
+async def _fetch_bybit_klines(session: aiohttp.ClientSession, symbol: str, interval: str, limit: int) -> Optional[List[dict]]:
+    """Fetch klines from Bybit as a fallback when Binance IP is banned."""
+    imap = {
+        "1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30",
+        "1h": "60", "2h": "120", "4h": "240", "6h": "360", "12h": "720",
+        "1d": "D", "1w": "W", "1M": "M"
+    }
+    b_interval = imap.get(interval, "15")
+    url = "https://api.bybit.com/v5/market/kline"
+    params = {
+        "category": "spot",
+        "symbol": symbol.upper(),
+        "interval": b_interval,
+        "limit": limit
+    }
     try:
-        url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all"
-        async with session.get(url, timeout=10) as resp:
+        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status == 200:
-                text = await resp.text()
-                proxies = [f"http://{p.strip()}" for p in text.split("\n") if p.strip()]
-                if proxies:
-                    _PROXIES = proxies
-                    logger.info(f"Loaded {len(_PROXIES)} free proxies.")
+                data = await resp.json()
+                if data.get("retCode") == 0 and "list" in data.get("result", {}):
+                    raw_list = data["result"]["list"]
+                    # Bybit returns descending (newest first), Binance is ascending (oldest first)
+                    raw_list.reverse()
+                    
+                    candles = []
+                    for k in raw_list:
+                        candles.append({
+                            "open_time": int(k[0]),
+                            "open": float(k[1]),
+                            "high": float(k[2]),
+                            "low": float(k[3]),
+                            "close": float(k[4]),
+                            "volume": float(k[5]),
+                            "close_time": int(k[0]), # Bybit doesn't have exact close time, use open
+                            "taker_buy_volume": float(k[5]) / 2, # Approximation since missing
+                        })
+                    return candles
     except Exception as e:
-        logger.warning(f"Failed to fetch proxies: {e}")
-
-async def _get_proxy(session: aiohttp.ClientSession) -> Optional[str]:
-    global _PROXIES
-    if not _PROXIES:
-        async with _PROXY_FETCH_LOCK:
-            if not _PROXIES:
-                await _fetch_proxies(session)
-    if _PROXIES:
-        return random.choice(_PROXIES)
+        logger.debug(f"Bybit fallback failed for {symbol}: {e}")
     return None
-
-def _remove_proxy(proxy: str):
-    global _PROXIES
-    if proxy in _PROXIES:
-        _PROXIES.remove(proxy)
 
 
 # ══════════════════════════════════════════════
@@ -289,74 +298,50 @@ class BinanceService:
         """
         Central REST GET – the ONLY place that talks to Binance REST.
         Returns parsed JSON, or None on failure / while paused / over budget.
-        Now routes through HTTP Proxies if the direct IP is banned.
         """
+        if is_banned():
+            return None
         if not _reserve_weight(_estimate_weight(path, params)):
             return None
 
         session = await self._get_session()
         url = f"{settings.BINANCE_REST_URL}{path}"
-        
-        max_retries = 3
-        for attempt in range(max_retries):
-            use_proxy = None
-            if is_banned() or attempt > 0:
-                use_proxy = await _get_proxy(session)
-                if not use_proxy and is_banned():
+        try:
+            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                # Sync with the real IP usage reported by Binance (shared IP aware)
+                used = resp.headers.get("X-MBX-USED-WEIGHT-1M")
+                if used and used.isdigit() and int(used) > _SERVER_WEIGHT_SOFT_LIMIT:
+                    now = time.time()
+                    _pause_rest(now + (60 - now % 60) + 2, f"server weight {used}/6000")
+
+                if resp.status in (418, 429):
+                    text = await resp.text()
+                    until = time.time() + 120  # default 2 min
+                    m = re.search(r"banned until (\d+)", text)
+                    if m:
+                        until = int(m.group(1)) / 1000.0 + 5
+                    else:
+                        retry_after = resp.headers.get("Retry-After")
+                        if retry_after and retry_after.isdigit():
+                            until = time.time() + int(retry_after) + 1
+                    _pause_rest(until, f"HTTP {resp.status}: {text[:150]}")
                     return None
-            
-            try:
-                req_kwargs = {"params": params, "timeout": aiohttp.ClientTimeout(total=5 if use_proxy else 10)}
-                if use_proxy:
-                    req_kwargs["proxy"] = use_proxy
 
-                async with session.get(url, **req_kwargs) as resp:
-                    if not use_proxy:
-                        # Sync with real IP usage for DIRECT connection only
-                        used = resp.headers.get("X-MBX-USED-WEIGHT-1M")
-                        if used and used.isdigit() and int(used) > _SERVER_WEIGHT_SOFT_LIMIT:
-                            now = time.time()
-                            _pause_rest(now + (60 - now % 60) + 2, f"server weight {used}/6000")
+                if resp.status in (403, 451):
+                    # 451 = restricted location (e.g. US region), 403 = WAF
+                    text = await resp.text()
+                    _pause_rest(time.time() + 600, f"HTTP {resp.status} (region/WAF): {text[:150]}")
+                    return None
 
-                    if resp.status in (418, 429):
-                        if use_proxy:
-                            _remove_proxy(use_proxy)
-                            continue
-                        else:
-                            text = await resp.text()
-                            until = time.time() + 120
-                            m = re.search(r"banned until (\d+)", text)
-                            if m:
-                                until = int(m.group(1)) / 1000.0 + 5
-                            else:
-                                retry_after = resp.headers.get("Retry-After")
-                                if retry_after and retry_after.isdigit():
-                                    until = time.time() + int(retry_after) + 1
-                            _pause_rest(until, f"HTTP {resp.status} (Direct)")
-                            continue
-                            
-                    if resp.status in (403, 451):
-                        if use_proxy:
-                            _remove_proxy(use_proxy)
-                            continue
-                        else:
-                            _pause_rest(time.time() + 300, f"Location restricted (HTTP {resp.status})")
-                            continue
-                            
-                    if resp.status == 200:
-                        return await resp.json()
-                        
-                    # Other errors (500, etc)
-                    if use_proxy:
-                        _remove_proxy(use_proxy)
-                        
-            except Exception as e:
-                if use_proxy:
-                    _remove_proxy(use_proxy)
-                else:
-                    logger.debug(f"Direct REST error: {e}")
-                    
-        return None
+                if resp.status != 200:
+                    text = await resp.text()
+                    logger.error(f"Binance REST error [{resp.status}] {path}: {text[:200]}")
+                    return None
+
+                return await resp.json()
+        except Exception as e:
+            logger.error(f"Binance REST exception {path}: {e}")
+            return None
 
     async def fetch_klines(
         self,
@@ -385,28 +370,37 @@ class BinanceService:
                 "/api/v3/klines",
                 {"symbol": symbol, "interval": interval, "limit": limit},
             )
-            if raw is None:
-                return _get_stale(cache_key) or []
 
-            try:
-                candles = []
-                for k in raw:
-                    candles.append({
-                        "open_time": int(k[0]),
-                        "open": float(k[1]),
-                        "high": float(k[2]),
-                        "low": float(k[3]),
-                        "close": float(k[4]),
-                        "volume": float(k[5]),
-                        "close_time": int(k[6]),
-                        "taker_buy_volume": float(k[9]),
-                    })
-                logger.debug(f"Fetched {len(candles)} klines for {symbol} ({interval})")
+            candles = []
+            if raw is not None:
+                try:
+                    for k in raw:
+                        candles.append({
+                            "open_time": int(k[0]),
+                            "open": float(k[1]),
+                            "high": float(k[2]),
+                            "low": float(k[3]),
+                            "close": float(k[4]),
+                            "volume": float(k[5]),
+                            "close_time": int(k[6]),
+                            "taker_buy_volume": float(k[9]),
+                        })
+                except Exception as e:
+                    logger.error(f"Error parsing klines for {symbol}: {e}")
+            
+            if not candles:
+                # ── BYBIT FALLBACK ──
+                session = await self._get_session()
+                bybit_candles = await _fetch_bybit_klines(session, symbol, interval, limit)
+                if bybit_candles:
+                    candles = bybit_candles
+                    logger.info(f"Loaded {len(candles)} klines for {symbol} ({interval}) from BYBIT (Fallback)")
+
+            if candles:
                 _set_cached(cache_key, candles)
                 return candles
-            except Exception as e:
-                logger.error(f"Error parsing klines for {symbol}: {e}")
-                return _get_stale(cache_key) or []
+                
+            return _get_stale(cache_key) or []
 
     async def fetch_ticker_price(self, symbol: str) -> Optional[float]:
         """Fetch current price for a symbol (live store first, REST fallback)."""
