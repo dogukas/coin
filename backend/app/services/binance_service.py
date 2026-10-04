@@ -209,6 +209,26 @@ async def _fetch_mexc_klines(session: aiohttp.ClientSession, symbol: str, interv
         logger.error(f"MEXC fallback exception for {symbol}: {e}")
     return None
 
+async def _fetch_mexc_all_24h_tickers_rest(session: aiohttp.ClientSession) -> Optional[List[dict]]:
+    """Fetch all 24h tickers from MEXC as fallback (US IP friendly)."""
+    url = "https://api.mexc.com/api/v3/ticker/24hr"
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                raw_list = await resp.json()
+                result = []
+                for t in raw_list:
+                    try:
+                        pct = float(t.get("priceChangePercent", 0)) * 100
+                        t["priceChangePercent"] = str(pct)
+                        result.append(t)
+                    except:
+                        pass
+                return result
+    except Exception as e:
+        logger.error(f"MEXC 24h tickers fallback exception: {e}")
+    return None
+
 # ══════════════════════════════════════════════
 # Rate-limit / ban protection
 # ══════════════════════════════════════════════
@@ -547,7 +567,12 @@ class BinanceService:
 
             raw = await self._rest_get("/api/v3/ticker/24hr")
             if raw is None:
-                return _get_stale(cache_key) or []
+                # ── MEXC FALLBACK ──
+                session = await self._get_session()
+                raw = await _fetch_mexc_all_24h_tickers_rest(session)
+                if raw is None:
+                    return _get_stale(cache_key) or []
+                logger.info("Using MEXC fallback for all 24h tickers")
 
             try:
                 result = []
