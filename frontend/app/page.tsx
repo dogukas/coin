@@ -204,24 +204,9 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          <Link href="/backtest" className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.2)]">
-            <Target size={14} />
-            Sinyal Geçmişi
-          </Link>
-
-          <Link href="/heatmap" className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 hover:border-purple-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(168,85,247,0.1)] hover:shadow-[0_0_20px_rgba(168,85,247,0.2)]">
-            <Map size={14} />
-            Isı Haritası
-          </Link>
-          
           <Link href="/screener" className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 hover:border-blue-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.2)]">
             <LayoutGrid size={14} />
             Küp Ekranı
-          </Link>
-
-          <Link href="/whales" className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(6,182,212,0.1)] hover:shadow-[0_0_20px_rgba(6,182,212,0.2)]">
-            <Fish size={14} />
-            Balinalar
           </Link>
 
           {/* Whale Alert Threshold Dropdown */}
@@ -341,21 +326,9 @@ export default function DashboardPage() {
           <Home size={18} />
           <span className="text-[9px] font-semibold">Ana Sayfa</span>
         </div>
-        <Link href="/backtest" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
-          <Target size={18} />
-          <span className="text-[9px] font-semibold">Sinyaller</span>
-        </Link>
-        <Link href="/heatmap" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
-          <Map size={18} />
-          <span className="text-[9px] font-semibold">Isı Haritası</span>
-        </Link>
-        <Link href="/screener" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
+          <Link href="/screener" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
           <LayoutGrid size={18} />
           <span className="text-[9px] font-semibold">Küp Ekran</span>
-        </Link>
-        <Link href="/whales" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
-          <Fish size={18} />
-          <span className="text-[9px] font-semibold">Balinalar</span>
         </Link>
       </nav>
     </div>
