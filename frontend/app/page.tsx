@@ -271,103 +271,97 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* ── Main Content (Responsive Flex) ── */}
-      <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+      {/* ── Main Content (Layout) ── */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto overflow-x-hidden p-3 md:p-4 gap-4">
         {/* Left: Coin Browser Sidebar */}
         <div
           className={`
-            border-b lg:border-b-0 lg:border-r border-white/5 bg-white/[0.005] flex-shrink-0
+            bg-[var(--card)] border border-[var(--line)] rounded-[18px] flex-shrink-0
             transition-all duration-300 overflow-hidden
-            ${sidebarOpen ? "h-[300px] lg:h-full lg:w-[280px]" : "h-0 lg:h-full lg:w-0"}
+            ${sidebarOpen ? "h-[300px] lg:h-auto lg:w-[280px]" : "hidden"}
           `}
         >
-          {sidebarOpen && (
-            <div className="w-full lg:w-[280px] h-full">
-              <CoinBrowser />
-            </div>
-          )}
+          <CoinBrowser />
         </div>
 
-        {/* Center: Chart */}
-        <div className="flex-1 min-w-0 flex flex-col">
-          <div className="flex flex-wrap items-center justify-between px-3 md:px-4 py-2.5 border-b border-white/5 gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-white">
-                {activeSymbol.replace("USDT", "")}
-              </span>
-              <span className="text-[10px] text-gray-500 bg-white/[0.03] px-1.5 py-0.5 rounded">/USDT</span>
-              
-              <div className="flex bg-white/[0.03] rounded-lg p-0.5 ml-1 md:ml-2 border border-white/5 overflow-x-auto">
-                <button
-                  onClick={() => setChartTab("price")}
-                  className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors whitespace-nowrap ${
-                    chartTab === "price" ? "bg-blue-500/20 text-blue-400" : "text-gray-500 hover:text-gray-300"
-                  }`}
-                >
-                  Fiyat
-                </button>
-                <button
-                  onClick={() => setChartTab("depth")}
-                  className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors whitespace-nowrap ${
-                    chartTab === "depth" ? "bg-emerald-500/20 text-emerald-400" : "text-gray-500 hover:text-gray-300"
-                  }`}
-                >
-                  Derinlik
-                </button>
-              </div>
+        {/* Center/Right Layout Area */}
+        <div className="flex-1 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4 min-w-0">
+          
+          {/* Main Panel (.main equivalent) */}
+          <main className="flex flex-col gap-4 min-w-0">
+            {/* Global Market Panel (.row3 equivalent) */}
+            <GlobalMarketPanel />
+            
+            {/* Indicator Grid (.ind equivalent) */}
+            <IndicatorGrid />
 
-              {/* Interval Selector (only show if price tab is active) */}
-              {chartTab === "price" && (
-                <div className="flex bg-white/[0.03] rounded-lg p-0.5 ml-1 md:ml-2 border border-white/5 overflow-x-auto">
-                  {["1m", "5m", "15m", "1h", "4h"].map((int) => (
+            {/* Chart Box */}
+            <div className="bg-gradient-to-br from-[var(--card-2)] to-[var(--card)] border border-[var(--line)] rounded-[18px] flex flex-col min-w-0">
+              <div className="flex flex-wrap items-center justify-between px-4 py-3 border-b border-[var(--line)] gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-bold text-[var(--ink)] tracking-[0.04em]">
+                    {activeSymbol.replace("USDT", "")}
+                  </span>
+                  <span className="text-[10px] text-[var(--ink-faint)] bg-white/5 border border-[var(--line)] px-2 py-0.5 rounded-[7px]">/USDT</span>
+                  
+                  <div className="flex bg-black/20 rounded-lg p-0.5 ml-2 border border-[var(--line)] overflow-x-auto">
                     <button
-                      key={int}
-                      onClick={() => setInterval(int)}
-                      className={`px-1.5 md:px-2 py-1 rounded text-[10px] font-semibold transition-colors whitespace-nowrap ${
-                        activeInterval === int
-                          ? "bg-white/[0.08] text-white"
-                          : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.05]"
+                      onClick={() => setChartTab("price")}
+                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                        chartTab === "price" ? "bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow-sm" : "text-[var(--ink-dim)] hover:text-[var(--ink)]"
                       }`}
                     >
-                      {int}
+                      Fiyat
                     </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60" />
-              <span className="text-[9px] md:text-[10px] text-gray-500 hidden sm:block">TradingView Charts</span>
-            </div>
-          </div>
-          <div className="w-full h-[350px] md:h-[400px] lg:h-[500px] lg:flex-none">
-            {chartTab === "price" ? <CandlestickChart /> : <DepthChart />}
-          </div>
-          
-          {/* Bottom Dashboards */}
-          <div className="flex flex-col 2xl:flex-row gap-3 p-3 bg-slate-900/10 border-t border-white/5">
-            <div className="flex-1 min-w-0">
-               <GlobalMarketPanel />
-            </div>
-            <div className="w-full 2xl:w-[600px] flex flex-col md:flex-row gap-3 shrink-0">
-               <div className="flex-1 min-w-0">
-                 <IndicatorGrid />
-               </div>
-               <div className="w-full md:w-[260px] shrink-0">
-                 <LiveTrades />
-               </div>
-            </div>
-          </div>
-        </div>
+                    <button
+                      onClick={() => setChartTab("depth")}
+                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                        chartTab === "depth" ? "bg-[var(--gain)]/20 text-[var(--gain)] border border-[var(--gain)]/30 shadow-sm" : "text-[var(--ink-dim)] hover:text-[var(--ink)]"
+                      }`}
+                    >
+                      Derinlik
+                    </button>
+                  </div>
 
-        {/* Right: Signal + AI */}
-        <div className="w-full lg:w-[320px] flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/5 flex flex-col p-3 gap-3">
-          <div className="flex-1 lg:overflow-y-auto custom-scrollbar space-y-3">
+                  {/* Interval Selector */}
+                  {chartTab === "price" && (
+                    <div className="flex bg-black/20 rounded-lg p-0.5 ml-2 border border-[var(--line)] overflow-x-auto">
+                      {["1m", "5m", "15m", "1h", "4h"].map((int) => (
+                        <button
+                          key={int}
+                          onClick={() => setInterval(int)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                            activeInterval === int
+                              ? "bg-white/10 text-[var(--ink)] border border-[var(--line)] shadow-sm"
+                              : "text-[var(--ink-dim)] hover:text-[var(--ink)] hover:bg-white/5"
+                          }`}
+                        >
+                          {int}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--gain)]" />
+                  <span className="text-[9px] md:text-[10px] text-[var(--ink-dim)] hidden sm:block font-mono">TradingView Charts</span>
+                </div>
+              </div>
+              <div className="w-full h-[400px] lg:h-[500px]">
+                {chartTab === "price" ? <CandlestickChart /> : <DepthChart />}
+              </div>
+            </div>
+          </main>
+
+          {/* Aside Panel (.aside equivalent) */}
+          <aside className="flex flex-col gap-4 min-w-0">
+            <LiveTrades />
             <AiCopilot />
             <SignalCard />
-          </div>
+          </aside>
+
         </div>
-      </main>
+      </div>
 
       {/* ── Mobile Bottom Navigation ── */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 flex items-center justify-around py-2 px-1 safe-area-bottom">

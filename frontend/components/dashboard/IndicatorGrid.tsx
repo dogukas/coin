@@ -1,16 +1,16 @@
 "use client";
 
-// Indicator Grid — mini-cards showing live RSI, MACD, EMA, Bollinger Bands, VWAP, Volume stats
-
 import { useDashboardStore } from "@/lib/store";
-import { formatNumber, formatPrice } from "@/lib/utils";
+import { formatPrice } from "@/lib/utils";
 import {
   Activity,
   BarChart3,
+  TrendingDown,
   TrendingUp,
   Waves,
   Maximize2,
   Gauge,
+  Layers,
 } from "lucide-react";
 
 export default function IndicatorGrid() {
@@ -21,389 +21,294 @@ export default function IndicatorGrid() {
   // VWAP price difference calculation
   let vwapDiffPct: number | null = null;
   let vwapStatus = "—";
-  let vwapColor = "#9ca3af";
+  let vwapStClass = "neu";
   if (currentPrice !== null && ind?.vwap) {
     vwapDiffPct = ((currentPrice - ind.vwap) / ind.vwap) * 100;
     if (vwapDiffPct >= 0) {
       vwapStatus = `+${vwapDiffPct.toFixed(2)}% (FİYAT ÜSTTE)`;
-      vwapColor = "#00e676";
+      vwapStClass = "pos";
     } else {
       vwapStatus = `${vwapDiffPct.toFixed(2)}% (FİYAT ALTTA)`;
-      vwapColor = "#ef5350";
+      vwapStClass = "neg";
     }
   }
 
   // Bollinger Bands position calculation
   let bbStatus = "—";
-  let bbColor = "#9ca3af";
+  let bbStClass = "neu";
   if (currentPrice !== null && ind?.bb_upper && ind?.bb_lower) {
     if (currentPrice > ind.bb_upper) {
       bbStatus = "ÜST BANT KIRILIMI";
-      bbColor = "#ef5350";
+      bbStClass = "neg";
     } else if (currentPrice < ind.bb_lower) {
       bbStatus = "ALT BANT KIRILIMI";
-      bbColor = "#00e676";
+      bbStClass = "pos";
     } else {
       bbStatus = "BANT İÇİ DENGELİ";
-      bbColor = "#66bb6a";
+      bbStClass = "neu";
     }
   }
 
   // Volume ratio calculation
   let volRatioText = "—";
-  let volBarValue = 0;
+  let volPct = 0;
   if (ind?.current_volume && ind?.volume_ma && ind.volume_ma > 0) {
     const ratio = (ind.current_volume / ind.volume_ma) * 100;
-    volRatioText = `%${ratio.toFixed(0)} Oran`;
-    volBarValue = ratio;
+    volPct = Math.min(ratio, 100);
+    volRatioText = `%${ratio.toFixed(0)}`;
   }
 
-  // MACD Bar Calculation (-0.5% to +0.5% mapping)
-  let macdBarValue = 50;
-  if (ind?.macd_histogram !== undefined && ind?.macd_histogram !== null && currentPrice) {
-     const histPct = (ind.macd_histogram / currentPrice) * 100; 
-     macdBarValue = Math.max(0, Math.min(100, 50 + (histPct * 100)));
-  }
+  // Common card classes mapping the new HTML style
+  const cardClass = "min-w-0 bg-gradient-to-br from-[var(--card-2)] to-[var(--card)] border border-[var(--line)] rounded-[18px] p-4 flex flex-col gap-3.5";
+  const chClass = "flex items-center gap-2 min-h-[22px]";
+  const h2Class = "m-0 text-[11px] font-bold tracking-[0.12em] uppercase text-[var(--ink-dim)]";
+  const vrowClass = "flex items-end justify-between gap-2.5 flex-wrap";
+  const vClass = "font-mono text-[26px] font-semibold leading-[1.05] tabular-nums tracking-[-0.01em]";
+  const vWordClass = "font-sans font-bold tracking-normal text-[24px]";
+  const sClass = "m-0 font-mono text-[11px] text-[var(--ink-dim)] leading-[1.5]";
 
-  // EMA Bar Calculation (Price vs EMA50, -5% to +5% mapping)
-  let emaBarValue = 50;
-  if (currentPrice && ind?.ema_50) {
-    const diffPct = ((currentPrice - ind.ema_50) / ind.ema_50) * 100;
-    emaBarValue = Math.max(0, Math.min(100, 50 + (diffPct * 10)));
-  }
+  const getStClass = (type: string) => {
+    const base = "inline-flex font-mono font-bold text-[10px] leading-none tracking-[0.08em] uppercase px-2.5 py-1.5 rounded-lg border whitespace-nowrap";
+    if (type === "pos") return `${base} text-[var(--gain)] bg-[rgba(47,214,161,0.1)] border-[rgba(47,214,161,0.35)]`;
+    if (type === "neg") return `${base} text-[var(--loss)] bg-[rgba(255,90,110,0.1)] border-[rgba(255,90,110,0.35)]`;
+    return `${base} text-[var(--warn)] bg-[rgba(245,177,61,0.1)] border-[rgba(245,177,61,0.35)]`;
+  };
 
-  // Bollinger Bar Calculation (Price position between bands)
-  let bbBarValue = 50;
-  if (currentPrice && ind?.bb_upper && ind?.bb_lower) {
-    const range = ind.bb_upper - ind.bb_lower;
-    if (range > 0) {
-      bbBarValue = Math.max(0, Math.min(100, ((currentPrice - ind.bb_lower) / range) * 100));
-    }
-  }
+  const formatVolumeShort = (volume: number): string => {
+    if (volume >= 1_000_000_000) return `${(volume / 1_000_000_000).toFixed(1)}B`;
+    if (volume >= 1_000_000) return `${(volume / 1_000_000).toFixed(1)}M`;
+    if (volume >= 1_000) return `${(volume / 1_000).toFixed(1)}K`;
+    return volume.toFixed(1);
+  };
 
-  // VWAP Bar Calculation (-3% to +3% mapping)
-  let vwapBarValue = 50;
-  if (vwapDiffPct !== null) {
-    vwapBarValue = Math.max(0, Math.min(100, 50 + (vwapDiffPct * (50/3))));
-  }
+  // EMA Difference
+  const emaDiff = ind?.ema_20 && ind?.ema_50 ? ind.ema_20 - ind.ema_50 : 0;
+  
+  // RSI Status
+  const getRsiInfo = (rsi: number | null) => {
+    if (!rsi) return { st: "neu", txt: "Nötr" };
+    if (rsi >= 70) return { st: "neg", txt: "Aşırı Alım (>70)" };
+    if (rsi >= 60) return { st: "pos", txt: "Güçlü (60-70)" };
+    if (rsi >= 40) return { st: "neu", txt: "Nötr (40-60)" };
+    if (rsi >= 30) return { st: "neg", txt: "Zayıf (30-40)" };
+    return { st: "pos", txt: "Aşırı Satım (<30)" };
+  };
+  const rsiInfo = getRsiInfo(ind?.rsi ?? null);
+
+  // Buy/Sell Pressure
+  const buyPct = ind?.buy_pressure_pct ?? 50;
 
   return (
-    <>
-    <div className="grid grid-cols-2 gap-3">
-      {/* 1. RSI Card */}
-      <IndicatorMiniCard
-        icon={<Activity size={14} />}
-        label="RSI (14)"
-        value={ind?.rsi !== null && ind?.rsi !== undefined ? ind.rsi.toFixed(1) : "—"}
-        subInfo="Referans: 30 / 70"
-        status={getRsiStatus(ind?.rsi ?? null)}
-        color={getRsiColor(ind?.rsi ?? null)}
-        barValue={ind?.rsi ?? 0}
-        barMax={100}
-        barGradient={getRsiBarGradient(ind?.rsi ?? 0)}
-      />
-
-      {/* 2. MACD Card */}
-      <IndicatorMiniCard
-        icon={<BarChart3 size={14} />}
-        label="MACD (12,26,9)"
-        value={
-          ind?.macd_histogram !== null && ind?.macd_histogram !== undefined
-            ? (ind.macd_histogram > 0 ? "+" : "") + ind.macd_histogram.toFixed(4)
-            : "—"
-        }
-        subInfo={
-          ind?.macd_line !== null && ind?.macd_signal !== null && ind?.macd_line !== undefined && ind?.macd_signal !== undefined
-            ? `M: ${ind.macd_line.toFixed(2)} | S: ${ind.macd_signal.toFixed(2)}`
-            : undefined
-        }
-        status={ind?.macd_trend === "bullish" ? "YÜKSELİŞ" : ind?.macd_trend === "bearish" ? "DÜŞÜŞ" : "—"}
-        color={ind?.macd_trend === "bullish" ? "#00e676" : ind?.macd_trend === "bearish" ? "#ef5350" : "#9ca3af"}
-        barValue={macdBarValue}
-        barMax={100}
-        barGradient={macdBarValue >= 50 ? "#66bb6a, #00e676" : "#ef5350, #ff1744"}
-      />
-
-      {/* 3. EMA Trend Card */}
-      <IndicatorMiniCard
-        icon={<TrendingUp size={14} />}
-        label="EMA Trend"
-        value={getEmaTrendLabel(ind?.ema_trend ?? null)}
-        subInfo={
-          ind?.ema_20 && ind?.ema_50
-            ? `20: ${formatShortPrice(ind.ema_20)} | 50: ${formatShortPrice(ind.ema_50)}`
-            : undefined
-        }
-        status={
-          ind?.ema_trend === "bullish_cross"
-            ? "BOĞA (20 > 50)"
-            : ind?.ema_trend === "bearish_cross"
-            ? "AYI (20 < 50)"
-            : "NÖTR"
-        }
-        color={
-          ind?.ema_trend === "bullish_cross"
-            ? "#00e676"
-            : ind?.ema_trend === "bearish_cross"
-            ? "#ef5350"
-            : "#9ca3af"
-        }
-        barValue={emaBarValue}
-        barMax={100}
-        barGradient={emaBarValue >= 50 ? "#66bb6a, #00e676" : "#ef5350, #ff1744"}
-      />
-
-      {/* 4. Bollinger Bands Card */}
-      <IndicatorMiniCard
-        icon={<Maximize2 size={14} />}
-        label="Bollinger (20,2)"
-        value={ind?.bb_middle ? `$${formatPrice(ind.bb_middle)}` : "—"}
-        subInfo={
-          ind?.bb_upper && ind?.bb_lower
-            ? `Alt: ${formatShortPrice(ind.bb_lower)} | Üst: ${formatShortPrice(ind.bb_upper)}`
-            : undefined
-        }
-        status={bbStatus}
-        color={bbColor}
-        barValue={bbBarValue}
-        barMax={100}
-        barGradient={bbBarValue > 80 ? "#ef5350, #ff1744" : bbBarValue < 20 ? "#66bb6a, #00e676" : "#ffc107, #ffab00"}
-      />
-
-      {/* 5. VWAP Card */}
-      <IndicatorMiniCard
-        icon={<Gauge size={14} />}
-        label="VWAP"
-        value={ind?.vwap ? `$${formatPrice(ind.vwap)}` : "—"}
-        subInfo={ind?.vwap ? "Günlük Hacim Ağır. Ort." : undefined}
-        status={vwapStatus}
-        color={vwapColor}
-        barValue={vwapBarValue}
-        barMax={100}
-        barGradient={vwapBarValue >= 50 ? "#66bb6a, #00e676" : "#ef5350, #ff1744"}
-      />
-
-      {/* 6. Volume Card */}
-      <IndicatorMiniCard
-        icon={<Waves size={14} />}
-        label="Hacim & 20 MA"
-        value={
-          ind?.current_volume !== null && ind?.current_volume !== undefined
-            ? formatVolumeShort(ind.current_volume)
-            : "—"
-        }
-        subInfo={
-          ind?.volume_ma
-            ? `20 MA: ${formatVolumeShort(ind.volume_ma)} (${volRatioText})`
-            : undefined
-        }
-        status={
-          ind?.current_volume && ind?.volume_ma
-            ? ind.current_volume > ind.volume_ma
-              ? "ORT. ÜSTÜ"
-              : "ORT. ALTI"
-            : "—"
-        }
-        color={
-          ind?.current_volume && ind?.volume_ma && ind.current_volume > ind.volume_ma
-            ? "#00e676"
-            : "#ef5350"
-        }
-        barValue={Math.min(200, volBarValue)}
-        barMax={200}
-        barGradient={volBarValue > 100 ? "#00e676, #66bb6a" : "#ffc107, #ff9800"}
-      />
-    </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       
-      {/* 7. Buy vs Sell Pressure Card (Full Width) */}
-      <div className="mt-3">
-        <IndicatorMiniCard
-          icon={<Activity size={14} />}
-          label="Alıcı / Satıcı Baskısı (Taker Buy)"
-          value={
-            ind?.buy_pressure_pct !== undefined && ind?.buy_pressure_pct !== null
-              ? `%${ind.buy_pressure_pct.toFixed(1)} Alım`
-              : "—"
-          }
-          subInfo={
-            ind?.buy_pressure_pct !== undefined && ind?.buy_pressure_pct !== null
-              ? `Satım: %${(100 - ind.buy_pressure_pct).toFixed(1)}`
-              : undefined
-          }
-          status={
-            ind?.buy_pressure_pct !== undefined && ind?.buy_pressure_pct !== null
-              ? ind.buy_pressure_pct > 50
-                ? "ALICILAR GÜÇLÜ"
-                : "SATICILAR GÜÇLÜ"
-              : "—"
-          }
-          color={
-            ind?.buy_pressure_pct !== undefined && ind?.buy_pressure_pct !== null
-              ? ind.buy_pressure_pct > 50
-                ? "#00e676"
-                : "#ef5350"
-              : "#9ca3af"
-          }
-          barValue={ind?.buy_pressure_pct ?? 0}
-          barMax={100}
-          barGradient="#00e676, #ef5350"
-        />
-      </div>
-    </>
-  );
-}
+      {/* 1. RSI */}
+      <section className={cardClass} aria-label="RSI">
+        <div className={chClass}>
+          <Activity className="w-4 h-4 text-[var(--ink-dim)]" />
+          <h2 className={h2Class}>RSI (14)</h2>
+        </div>
+        <div className={vrowClass}>
+          <div className={vClass}>{ind?.rsi ? ind.rsi.toFixed(1) : "—"}</div>
+          <span className={getStClass(rsiInfo.st)}>{rsiInfo.txt}</span>
+        </div>
+        <div className="relative">
+          <div className="relative h-2 rounded-full bg-[var(--track)]" style={{ background: "linear-gradient(90deg, rgba(47,214,161,.28) 0 30%, var(--track) 30% 70%, rgba(255,90,110,.28) 70% 100%)" }}>
+            <span className="absolute top-[-3px] bottom-[-3px] w-[1.5px] bg-[var(--ink-faint)]" style={{ left: "30%" }} />
+            <span className="absolute top-[-3px] bottom-[-3px] w-[1.5px] bg-[var(--ink-faint)]" style={{ left: "70%" }} />
+            {ind?.rsi && (
+              <span className="absolute top-1/2 w-3.5 h-3.5 -mt-[7px] -ml-[7px] rounded-full bg-[var(--ink)] border-[3px] border-[var(--ground)] shadow-[0_0_0_1.5px_var(--ink-dim)]" style={{ left: `${Math.min(100, Math.max(0, ind.rsi))}%` }} />
+            )}
+          </div>
+          <div className="relative h-3 block font-mono text-[10px] text-[var(--ink-faint)] mt-1.5">
+            <span className="absolute -translate-x-1/2 left-0 transform-none">0</span>
+            <span className="absolute -translate-x-1/2 left-[30%]">30</span>
+            <span className="absolute -translate-x-1/2 left-[70%]">70</span>
+            <span className="absolute -translate-x-[100%] left-full">100</span>
+          </div>
+        </div>
+        <p className={sClass}>Referans: <b className="text-[var(--ink)] font-medium">30 / 70</b></p>
+      </section>
 
-// ──────────────────────────────────────────────
-// Mini Card Component
-// ──────────────────────────────────────────────
-
-function IndicatorMiniCard({
-  icon,
-  label,
-  value,
-  subInfo,
-  status,
-  color,
-  barValue,
-  barMax,
-  barGradient,
-  className = "",
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  subInfo?: string;
-  status: string;
-  color: string;
-  barValue?: number;
-  barMax?: number;
-  barGradient?: string;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`relative overflow-hidden rounded-xl border border-white/5 p-3 backdrop-blur-2xl transition-all duration-500 hover:border-white/20 hover:shadow-lg flex flex-col justify-between group ${className}`}
-      style={{
-        background:
-          "linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)",
-        boxShadow: `0 4px 20px 0 rgba(0,0,0,0.2)`,
-      }}
-    >
-      {/* Hover Glow */}
-      <div 
-        className="absolute -top-10 -right-10 w-20 h-20 rounded-full blur-[40px] opacity-0 group-hover:opacity-20 transition-opacity duration-700 pointer-events-none"
-        style={{ backgroundColor: color }}
-      />
-      
-      <div className="relative z-10">
-        {/* Header */}
-        <div className="flex items-center gap-1.5 mb-1.5">
-          <span className="text-gray-400 group-hover:text-white transition-colors">{icon}</span>
-          <span className="text-[10px] font-bold text-gray-400 group-hover:text-gray-200 uppercase tracking-widest truncate transition-colors">
-            {label}
+      {/* 2. MACD */}
+      <section className={cardClass} aria-label="MACD">
+        <div className={chClass}>
+          <BarChart3 className="w-4 h-4 text-[var(--ink-dim)]" />
+          <h2 className={h2Class}>MACD (12,26,9)</h2>
+        </div>
+        <div className={vrowClass}>
+          <div className={`${vClass} ${ind?.macd_trend === "bearish" ? "text-[var(--loss)]" : ind?.macd_trend === "bullish" ? "text-[var(--gain)]" : ""}`}>
+            {ind?.macd_histogram ? ind.macd_histogram.toFixed(4) : "—"}
+          </div>
+          <span className={getStClass(ind?.macd_trend === "bullish" ? "pos" : ind?.macd_trend === "bearish" ? "neg" : "neu")}>
+            {ind?.macd_trend === "bullish" ? "Yükseliş" : ind?.macd_trend === "bearish" ? "Düşüş" : "Nötr"}
           </span>
         </div>
-
-        {/* Value */}
-        <div className="text-lg font-black text-white tabular-nums tracking-tight mb-0.5 truncate drop-shadow-md">
-          {value}
+        <div>
+          <svg viewBox="0 0 160 44" className="w-full h-auto block" role="img" aria-label="MACD">
+            <line x1="0" x2="160" y1="22" y2="22" stroke="var(--line)" strokeWidth="1" />
+            {/* Fake histogram bars representing MACD trend for aesthetic purposes */}
+            {Array.from({ length: 20 }).map((_, i) => {
+              const v = Math.sin(i / 3) * (ind?.macd_histogram ? (ind.macd_histogram > 0 ? 1 : -1) : 1);
+              const isUp = v >= 0;
+              const h = Math.max(1.5, Math.abs(v) * 15);
+              const w = 160 / 20;
+              return (
+                <rect 
+                  key={i} x={i * w + 1} y={isUp ? 22 - h : 23} width={w - 3} height={h} rx={1.5} 
+                  fill={isUp ? "var(--gain)" : "var(--loss)"} opacity={i === 19 ? 1 : 0.55} 
+                />
+              );
+            })}
+          </svg>
         </div>
+        <p className={sClass}>
+          M: <b className="text-[var(--ink)] font-medium">{ind?.macd_line?.toFixed(2) ?? "—"}</b> &nbsp;|&nbsp; 
+          S: <b className="text-[var(--ink)] font-medium">{ind?.macd_signal?.toFixed(2) ?? "—"}</b>
+        </p>
+      </section>
 
-        {/* Sub info (e.g. secondary values) */}
-        {subInfo && (
-          <div className="text-[9px] font-mono font-medium text-gray-500 truncate mb-1">
-            {subInfo}
+      {/* 3. EMA Trend */}
+      <section className={cardClass} aria-label="EMA trend">
+        <div className={chClass}>
+          <TrendingUp className="w-4 h-4 text-[var(--ink-dim)]" />
+          <h2 className={h2Class}>EMA Trend</h2>
+        </div>
+        <div className={vrowClass}>
+          <div className={`${vClass} ${vWordClass} ${ind?.ema_trend === "bearish_cross" ? "text-[var(--loss)]" : ind?.ema_trend === "bullish_cross" ? "text-[var(--gain)]" : ""}`}>
+            {ind?.ema_trend === "bullish_cross" ? "Yükseliş" : ind?.ema_trend === "bearish_cross" ? "Düşüş" : "Nötr"}
           </div>
-        )}
-      </div>
-
-      <div className="mt-2 relative z-10">
-        {/* Status badge */}
-        <div className="flex items-center gap-2">
-          <span
-            className="text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm tracking-widest truncate uppercase"
-            style={{
-              backgroundColor: `${color}15`,
-              color: color,
-              border: `1px solid ${color}30`,
-            }}
-          >
-            {status}
+          <span className={getStClass(ind?.ema_trend === "bullish_cross" ? "pos" : ind?.ema_trend === "bearish_cross" ? "neg" : "neu")}>
+            {ind?.ema_trend === "bullish_cross" ? "Boğa (20 > 50)" : ind?.ema_trend === "bearish_cross" ? "Ayı (20 < 50)" : "Nötr"}
           </span>
         </div>
-
-        {/* Optional bar (for RSI) */}
-        {barValue !== undefined && barMax !== undefined && (
-          <div className="mt-2 w-full h-1.5 rounded-full bg-black/40 overflow-hidden relative shadow-inner">
-            {/* Guide markers at 30% and 70% */}
-            <div className="absolute left-[30%] top-0 bottom-0 w-[1px] bg-white/20 z-10" />
-            <div className="absolute left-[70%] top-0 bottom-0 w-[1px] bg-white/20 z-10" />
-            <div
-              className="h-full rounded-full transition-all duration-1000 ease-out"
-              style={{
-                width: `${Math.min(100, Math.max(0, (barValue / barMax) * 100))}%`,
-                background: barGradient ? `linear-gradient(90deg, ${barGradient})` : color,
-                boxShadow: `0 0 10px ${color}50`
-              }}
-            />
+        <div>
+          <svg viewBox="0 0 160 44" className="w-full h-auto block" role="img" aria-label="EMA Trend">
+            <polyline points="0,14 25,15 50,17 75,20 100,24 125,27 160,30" fill="none" stroke="#a98791" strokeWidth="1.6" strokeDasharray="4 3" strokeLinecap="round"/>
+            <polyline points="0,8 25,11 50,16 75,24 100,30 125,34 160,38" fill="none" stroke={ind?.ema_trend === "bullish_cross" ? "var(--gain)" : "var(--loss)"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            <circle cx="160" cy="38" r="3" fill={ind?.ema_trend === "bullish_cross" ? "var(--gain)" : "var(--loss)"}/>
+          </svg>
+          <div className="flex gap-3 font-mono text-[10px] text-[var(--ink-dim)] mt-1.5">
+            <span className="flex items-center gap-1.5"><i className={`w-3 h-0.5 inline-block ${ind?.ema_trend === "bullish_cross" ? "bg-[var(--gain)]" : "bg-[var(--loss)]"}`} />EMA20</span>
+            <span className="flex items-center gap-1.5"><i className="w-3 h-0.5 inline-block bg-[#a98791]" />EMA50</span>
           </div>
-        )}
-      </div>
+        </div>
+        <p className={sClass}>
+          20: <b className="text-[var(--ink)] font-medium">{ind?.ema_20 ? ind.ema_20.toFixed(2) : "—"}</b> &nbsp;|&nbsp; 
+          50: <b className="text-[var(--ink)] font-medium">{ind?.ema_50 ? ind.ema_50.toFixed(2) : "—"}</b> &nbsp;|&nbsp; 
+          Fark: <b className={emaDiff >= 0 ? "text-[var(--gain)]" : "text-[var(--loss)]"}>{emaDiff.toFixed(2)}</b>
+        </p>
+      </section>
+
+      {/* 4. Bollinger */}
+      <section className={cardClass} aria-label="Bollinger">
+        <div className={chClass}>
+          <Maximize2 className="w-4 h-4 text-[var(--ink-dim)]" />
+          <h2 className={h2Class}>Bollinger (20,2)</h2>
+        </div>
+        <div className={vrowClass}>
+          <div className={vClass}>${currentPrice ? formatPrice(currentPrice) : "—"}</div>
+          <span className={getStClass(bbStClass)}>{bbStatus}</span>
+        </div>
+        <div>
+          <div className="relative h-2 rounded-full bg-[var(--track)]" style={{ background: "linear-gradient(90deg, rgba(47,214,161,.22), var(--track) 25% 75%, rgba(255,90,110,.22))" }}>
+            <span className="absolute top-[-3px] bottom-[-3px] w-[1.5px] bg-[var(--ink-faint)] left-1/2" />
+            {currentPrice && ind?.bb_lower && ind?.bb_upper && (
+              <span className="absolute top-1/2 w-3.5 h-3.5 -mt-[7px] -ml-[7px] rounded-full bg-[var(--ink)] border-[3px] border-[var(--ground)] shadow-[0_0_0_1.5px_var(--ink-dim)]" style={{ left: `${Math.min(100, Math.max(0, ((currentPrice - ind.bb_lower) / (ind.bb_upper - ind.bb_lower)) * 100))}%` }} />
+            )}
+          </div>
+          <div className="flex justify-between font-mono text-[10px] text-[var(--ink-faint)] mt-1.5">
+            <span>{ind?.bb_lower ? ind.bb_lower.toFixed(2) : "Alt"}</span>
+            <span>Orta</span>
+            <span>{ind?.bb_upper ? ind.bb_upper.toFixed(2) : "Üst"}</span>
+          </div>
+        </div>
+        <p className={sClass}>
+          Alt: <b className="text-[var(--ink)] font-medium">{ind?.bb_lower ? ind.bb_lower.toFixed(2) : "—"}</b> &nbsp;|&nbsp; 
+          Üst: <b className="text-[var(--ink)] font-medium">{ind?.bb_upper ? ind.bb_upper.toFixed(2) : "—"}</b>
+        </p>
+      </section>
+
+      {/* 5. VWAP */}
+      <section className={cardClass} aria-label="VWAP">
+        <div className={chClass}>
+          <Gauge className="w-4 h-4 text-[var(--ink-dim)]" />
+          <h2 className={h2Class}>VWAP</h2>
+        </div>
+        <div className={vrowClass}>
+          <div className={vClass}>${ind?.vwap ? formatPrice(ind.vwap) : "—"}</div>
+          <span className={getStClass(vwapStClass)}>{vwapStatus}</span>
+        </div>
+        <div>
+          <div className="relative h-2 rounded-full bg-[var(--track)]">
+            <span className="absolute top-[-3px] bottom-[-3px] w-[1.5px] bg-[var(--ink-faint)] left-1/2" />
+            {vwapDiffPct !== null && (
+              <>
+                <span className="absolute inset-y-0 rounded-full" 
+                  style={{ 
+                    left: vwapDiffPct > 0 ? "50%" : `${Math.max(0, 50 + vwapDiffPct * (50/5))}%`, 
+                    width: `${Math.min(50, Math.abs(vwapDiffPct * (50/5)))}%`, 
+                    background: vwapDiffPct > 0 ? "rgba(47,214,161,.45)" : "rgba(255,90,110,.45)" 
+                  }} 
+                />
+                <span className="absolute top-1/2 w-3.5 h-3.5 -mt-[7px] -ml-[7px] rounded-full bg-[var(--ink)] border-[3px] border-[var(--ground)] shadow-[0_0_0_1.5px_var(--ink-dim)]" style={{ left: `${Math.min(100, Math.max(0, 50 + vwapDiffPct * (50/5)))}%` }} />
+              </>
+            )}
+          </div>
+          <div className="flex justify-between font-mono text-[10px] text-[var(--ink-faint)] mt-1.5">
+            <span>-5%</span><span>VWAP</span><span>+5%</span>
+          </div>
+        </div>
+        <p className={sClass}>Günlük hacim ağırlıklı ortalama</p>
+      </section>
+
+      {/* 6. Hacim & 20 MA */}
+      <section className={cardClass} aria-label="Hacim ve 20 MA">
+        <div className={chClass}>
+          <Waves className="w-4 h-4 text-[var(--ink-dim)]" />
+          <h2 className={h2Class}>Hacim &amp; 20 MA</h2>
+        </div>
+        <div className={vrowClass}>
+          <div className={vClass}>{ind?.current_volume ? formatVolumeShort(ind.current_volume) : "—"}</div>
+          <span className={getStClass(ind?.current_volume && ind?.volume_ma && ind.current_volume > ind.volume_ma ? "pos" : "neu")}>
+            {ind?.current_volume && ind?.volume_ma ? (ind.current_volume > ind.volume_ma ? "ORT. ÜSTÜ" : "ORT. ALTI") : "—"}
+          </span>
+        </div>
+        <div>
+          <div className="relative h-2 rounded-full bg-[var(--track)]">
+            <span className={`absolute inset-y-0 left-0 rounded-full ${volPct >= 100 ? "bg-[var(--gain)]" : "bg-[var(--warn)]"}`} style={{ width: `${Math.min(100, volPct)}%` }} />
+            <span className="absolute top-[-3px] bottom-[-3px] w-[1.5px] bg-[var(--ink-faint)] right-0" />
+          </div>
+          <div className="flex justify-between font-mono text-[10px] text-[var(--ink-faint)] mt-1.5">
+            <span>0</span><span>20 MA: {ind?.volume_ma ? formatVolumeShort(ind.volume_ma) : "—"}</span>
+          </div>
+        </div>
+        <p className={sClass}>Ortalamanın <b className="text-[var(--ink)] font-medium">{volRatioText}</b>'ü</p>
+      </section>
+
+      {/* 7. Alıcı / Satıcı Baskısı */}
+      <section className={`${cardClass} md:col-span-2 lg:col-span-3`} aria-label="Alıcı satıcı baskısı">
+        <div className={chClass}>
+          <Layers className="w-4 h-4 text-[var(--ink-dim)]" />
+          <h2 className={h2Class}>Alıcı / Satıcı Baskısı (Taker Buy)</h2>
+        </div>
+        <div className={vrowClass}>
+          <div className={vClass}>%{buyPct.toFixed(1)} <span className="font-sans text-[18px]">Alım</span></div>
+          <span className={getStClass(buyPct > 50 ? "pos" : "neg")}>
+            {buyPct > 50 ? "Alıcılar güçlü" : "Satıcılar güçlü"}
+          </span>
+        </div>
+        <div>
+          <div className="flex h-[10px] rounded-full overflow-hidden gap-[2px]">
+            <i className="block h-full bg-[var(--gain)]" style={{ width: `${buyPct}%` }} />
+            <i className="block h-full bg-[var(--loss)]" style={{ width: `${100 - buyPct}%` }} />
+          </div>
+          <div className="flex justify-between font-mono text-[10px] mt-1.5">
+            <span className="text-[var(--gain)]">Alım %{buyPct.toFixed(1)}</span>
+            <span className="text-[var(--loss)]">Satım %{(100 - buyPct).toFixed(1)}</span>
+          </div>
+        </div>
+      </section>
+
     </div>
   );
-}
-
-// ──────────────────────────────────────────────
-// Helper Functions
-// ──────────────────────────────────────────────
-
-function getRsiStatus(rsi: number | null): string {
-  if (rsi === null) return "—";
-  if (rsi >= 70) return "AŞIRI ALIM (>70)";
-  if (rsi >= 60) return "GÜÇLÜ (60-70)";
-  if (rsi >= 40) return "NÖTR (40-60)";
-  if (rsi >= 30) return "ZAYIF (30-40)";
-  return "AŞIRI SATIM (<30)";
-}
-
-function getRsiColor(rsi: number | null): string {
-  if (rsi === null) return "#9ca3af";
-  if (rsi >= 70) return "#ef5350";
-  if (rsi >= 60) return "#66bb6a";
-  if (rsi >= 40) return "#ffc107";
-  if (rsi >= 30) return "#ff9800";
-  return "#ef5350";
-}
-
-function getRsiBarGradient(rsi: number): string {
-  if (rsi >= 70) return "#ef5350, #ff1744";
-  if (rsi >= 60) return "#66bb6a, #00e676";
-  if (rsi >= 40) return "#ffc107, #ffab00";
-  if (rsi >= 30) return "#ff9800, #ff6d00";
-  return "#ef5350, #ff1744";
-}
-
-function getEmaTrendLabel(trend: string | null): string {
-  switch (trend) {
-    case "bullish_cross":
-      return "YÜKSELİŞ";
-    case "bearish_cross":
-      return "DÜŞÜŞ";
-    default:
-      return "NÖTR";
-  }
-}
-
-function formatShortPrice(val: number): string {
-  if (val >= 1000) {
-    return `${(val / 1000).toFixed(1)}k`;
-  }
-  return val.toFixed(2);
-}
-
-function formatVolumeShort(volume: number): string {
-  if (volume >= 1_000_000_000) return `${(volume / 1_000_000_000).toFixed(1)}B`;
-  if (volume >= 1_000_000) return `${(volume / 1_000_000).toFixed(1)}M`;
-  if (volume >= 1_000) return `${(volume / 1_000).toFixed(1)}K`;
-  return volume.toFixed(1);
 }

@@ -39,32 +39,92 @@ export default function DepthChart() {
     return () => observer.disconnect();
   }, []);
 
-  // Connect to Binance @depth20@100ms
+  // Connect to Binance or MEXC as fallback
   useEffect(() => {
-    let ws: WebSocket;
+    let ws: WebSocket | null = null;
     let isMounted = true;
+    let currentEndpointIndex = 0;
+
+    const endpoints = [
+      {
+        provider: "binance-vision",
+        url: "wss://data-stream.binance.vision:9443/ws",
+        getStreamPath: (symbol: string) => `/${symbol.toLowerCase()}@depth20@100ms`,
+        getSubscribeMsg: null,
+      },
+      {
+        provider: "binance",
+        url: "wss://stream.binance.com:9443/ws",
+        getStreamPath: (symbol: string) => `/${symbol.toLowerCase()}@depth20@100ms`,
+        getSubscribeMsg: null,
+      },
+      {
+        provider: "mexc",
+        url: "wss://wbs.mexc.com/ws",
+        getStreamPath: () => "",
+        getSubscribeMsg: (symbol: string) => JSON.stringify({
+          method: "SUBSCRIPTION",
+          params: [`spot@public.limit.depth.v3.api@${symbol.toUpperCase()}@20`]
+        }),
+      }
+    ];
+
     setLoading(true);
 
     const connect = () => {
-      const streamName = `${activeSymbol.toLowerCase()}@depth20@100ms`;
-      ws = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
+      if (!isMounted) return;
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+
+      const endpoint = endpoints[currentEndpointIndex];
+      const url = `${endpoint.url}${endpoint.getStreamPath(activeSymbol)}`;
+      
+      try {
+        ws = new WebSocket(url);
+      } catch (err) {
+        console.error("Depth WS creation error:", err);
+        handleFallback();
+        return;
+      }
+
+      ws.onopen = () => {
+        console.log(`Connected to Depth WS: ${url}`);
+        if (endpoint.getSubscribeMsg) {
+          ws?.send(endpoint.getSubscribeMsg(activeSymbol));
+        }
+      };
 
       ws.onmessage = (event) => {
         if (!isMounted) return;
-        setLoading(false);
-        const data = JSON.parse(event.data);
         
-        if (data.bids && data.asks) {
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+
+        // Handle MEXC format (data is inside 'd')
+        if (endpoint.provider === "mexc") {
+          if (data && data.d && data.d.bids && data.d.asks) {
+            data = data.d;
+          } else {
+            return; // Ignore ping/pong or subscription acks
+          }
+        }
+        
+        if (data && data.bids && data.asks && data.bids.length > 0) {
+          setLoading(false);
           let cumulativeBids = 0;
-          // Binance sends bids sorted descending by price (best bid first).
-          // We want the x-axis to be price ascending, so we reverse it.
+          // Bids are sorted descending by price (best bid first). We reverse for x-axis.
           const bidsData: Point[] = [...data.bids].map((bid: string[]) => {
             cumulativeBids += parseFloat(bid[1]);
             return { price: parseFloat(bid[0]), total: cumulativeBids };
           });
-          // Reverse back so it goes from lowest price (left) to highest bid price (center)
+          
           bidsData.reverse();
-          // Recalculate cumulative from the outside in to match the mountain shape properly
           let totalBids = 0;
           for (let i = 0; i < bidsData.length; i++) {
              totalBids += parseFloat(data.bids[data.bids.length - 1 - i][1]);
@@ -84,15 +144,45 @@ export default function DepthChart() {
       };
 
       ws.onerror = (err) => {
-        console.error("Depth WS error", err);
+        console.error(`Depth WS error on ${url}`);
+        handleFallback();
       };
+      
+      ws.onclose = () => {
+        if (isMounted) {
+          // If we close unexpectedly and we haven't loaded yet, try fallback
+          if (loading) {
+            handleFallback();
+          } else {
+            setTimeout(() => connect(), 5000);
+          }
+        }
+      };
+    };
+
+    const handleFallback = () => {
+      if (!isMounted) return;
+      currentEndpointIndex++;
+      if (currentEndpointIndex < endpoints.length) {
+        console.log(`Falling back to ${endpoints[currentEndpointIndex].provider}`);
+        // Nullify onclose before re-connecting to prevent loop
+        if (ws) ws.onclose = null;
+        setTimeout(connect, 1000);
+      } else {
+        console.error("All Depth WS endpoints failed.");
+        currentEndpointIndex = 0;
+        setTimeout(connect, 5000);
+      }
     };
 
     connect();
 
     return () => {
       isMounted = false;
-      if (ws) ws.close();
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
     };
   }, [activeSymbol]);
 

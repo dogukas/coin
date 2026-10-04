@@ -1,17 +1,86 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-sora: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --color-ground: #12060a;
+  --color-card: #1c0a10;
+  --color-card-2: #240c14;
+  --color-line: #3b1c26;
+  --color-ink: #f6e9ec;
+  --color-ink-dim: #a98791;
+  --color-ink-faint: #6f545c;
+  --color-crimson: #ff3b5c;
+  --color-gain: #2fd6a1;
+  --color-loss: #ff5a6e;
+  --color-warn: #f5b13d;
+  --color-track: #33161f;
+}
+
 /* ──────────────────────────────────────────────
-   Custom Font Assignments
+   Custom Font Assignments & Theme Variables
    ────────────────────────────────────────────── */
 
 :root {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-sora: "Sora", ui-sans-serif, system-ui, sans-serif;
+
+  /* Default (Neutral/Blue Theme) */
+  --ground: #060b12;
+  --card: #0a101c;
+  --card-2: #0c1424;
+  --line: #1c263b;
+  --ink: #e9ecf6;
+  --ink-dim: #8791a9;
+  --ink-faint: #545c6f;
+  
+  --bg-glow: #0d1a33;
+  --track: #161f33;
+
+  --crimson: #ff3b5c;
+  --gain: #2fd6a1;
+  --loss: #ff5a6e;
+  --warn: #f5b13d;
+}
+
+/* Positive (Bullish/Green Theme) */
+.theme-positive {
+  --ground: #06120a;
+  --card: #0a1c10;
+  --card-2: #0c2414;
+  --line: #1c3b26;
+  --ink: #e9f6ec;
+  --ink-dim: #87a991;
+  --ink-faint: #546f5c;
+  
+  --bg-glow: #0d331a;
+  --track: #16331f;
+}
+
+/* Negative (Bearish/Red Theme) */
+.theme-negative {
+  --ground: #12060a;
+  --card: #1c0a10;
+  --card-2: #240c14;
+  --line: #3b1c26;
+  --ink: #f6e9ec;
+  --ink-dim: #a98791;
+  --ink-faint: #6f545c;
+  
+  --bg-glow: #34101a;
+  --track: #33161f;
 }
 
 body {
   font-family: var(--font-sans);
+  background: radial-gradient(70rem 30rem at 30% -10%, var(--bg-glow) 0%, transparent 60%), var(--ground);
+  color: var(--ink);
+  min-height: 100vh;
+  transition: background-color 0.5s ease, color 0.5s ease;
 }
+
 
 /* ──────────────────────────────────────────────
    Scrollbar Styling
