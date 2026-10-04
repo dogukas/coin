@@ -289,50 +289,74 @@ class BinanceService:
         """
         Central REST GET – the ONLY place that talks to Binance REST.
         Returns parsed JSON, or None on failure / while paused / over budget.
+        Now routes through HTTP Proxies if the direct IP is banned.
         """
-        if is_banned():
-            return None
         if not _reserve_weight(_estimate_weight(path, params)):
             return None
 
         session = await self._get_session()
         url = f"{settings.BINANCE_REST_URL}{path}"
-        try:
-            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                # Sync with the real IP usage reported by Binance (shared IP aware)
-                used = resp.headers.get("X-MBX-USED-WEIGHT-1M")
-                if used and used.isdigit() and int(used) > _SERVER_WEIGHT_SOFT_LIMIT:
-                    now = time.time()
-                    _pause_rest(now + (60 - now % 60) + 2, f"server weight {used}/6000")
-
-                if resp.status in (418, 429):
-                    text = await resp.text()
-                    until = time.time() + 120  # default 2 min
-                    m = re.search(r"banned until (\d+)", text)
-                    if m:
-                        until = int(m.group(1)) / 1000.0 + 5
-                    else:
-                        retry_after = resp.headers.get("Retry-After")
-                        if retry_after and retry_after.isdigit():
-                            until = time.time() + int(retry_after) + 1
-                    _pause_rest(until, f"HTTP {resp.status}: {text[:150]}")
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            use_proxy = None
+            if is_banned() or attempt > 0:
+                use_proxy = await _get_proxy(session)
+                if not use_proxy and is_banned():
                     return None
+            
+            try:
+                req_kwargs = {"params": params, "timeout": aiohttp.ClientTimeout(total=5 if use_proxy else 10)}
+                if use_proxy:
+                    req_kwargs["proxy"] = use_proxy
 
-                if resp.status in (403, 451):
-                    # 451 = restricted location (e.g. US region), 403 = WAF
-                    text = await resp.text()
-                    _pause_rest(time.time() + 600, f"HTTP {resp.status} (region/WAF): {text[:150]}")
-                    return None
+                async with session.get(url, **req_kwargs) as resp:
+                    if not use_proxy:
+                        # Sync with real IP usage for DIRECT connection only
+                        used = resp.headers.get("X-MBX-USED-WEIGHT-1M")
+                        if used and used.isdigit() and int(used) > _SERVER_WEIGHT_SOFT_LIMIT:
+                            now = time.time()
+                            _pause_rest(now + (60 - now % 60) + 2, f"server weight {used}/6000")
 
-                if resp.status != 200:
-                    text = await resp.text()
-                    logger.error(f"Binance REST error [{resp.status}] {path}: {text[:200]}")
-                    return None
-
-                return await resp.json()
-        except Exception as e:
-            logger.error(f"Binance REST exception {path}: {e}")
-            return None
+                    if resp.status in (418, 429):
+                        if use_proxy:
+                            _remove_proxy(use_proxy)
+                            continue
+                        else:
+                            text = await resp.text()
+                            until = time.time() + 120
+                            m = re.search(r"banned until (\d+)", text)
+                            if m:
+                                until = int(m.group(1)) / 1000.0 + 5
+                            else:
+                                retry_after = resp.headers.get("Retry-After")
+                                if retry_after and retry_after.isdigit():
+                                    until = time.time() + int(retry_after) + 1
+                            _pause_rest(until, f"HTTP {resp.status} (Direct)")
+                            continue
+                            
+                    if resp.status in (403, 451):
+                        if use_proxy:
+                            _remove_proxy(use_proxy)
+                            continue
+                        else:
+                            _pause_rest(time.time() + 300, f"Location restricted (HTTP {resp.status})")
+                            continue
+                            
+                    if resp.status == 200:
+                        return await resp.json()
+                        
+                    # Other errors (500, etc)
+                    if use_proxy:
+                        _remove_proxy(use_proxy)
+                        
+            except Exception as e:
+                if use_proxy:
+                    _remove_proxy(use_proxy)
+                else:
+                    logger.debug(f"Direct REST error: {e}")
+                    
+        return None
 
     async def fetch_klines(
         self,
