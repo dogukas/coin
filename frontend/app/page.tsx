@@ -343,16 +343,28 @@ export default function DashboardPage() {
           <div className="w-full h-[350px] md:h-[400px] lg:h-[500px] lg:flex-none">
             {chartTab === "price" ? <CandlestickChart /> : <DepthChart />}
           </div>
-          <GlobalMarketPanel />
+          
+          {/* Bottom Dashboards */}
+          <div className="flex flex-col 2xl:flex-row gap-3 p-3 bg-slate-900/10 border-t border-white/5">
+            <div className="flex-1 min-w-0">
+               <GlobalMarketPanel />
+            </div>
+            <div className="w-full 2xl:w-[600px] flex flex-col md:flex-row gap-3 shrink-0">
+               <div className="flex-1 min-w-0">
+                 <IndicatorGrid />
+               </div>
+               <div className="w-full md:w-[260px] shrink-0">
+                 <LiveTrades />
+               </div>
+            </div>
+          </div>
         </div>
 
-        {/* Right: Signal + Indicators + Trades */}
-        <div className="w-full lg:w-[340px] flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/5 flex flex-col p-3 gap-3">
+        {/* Right: Signal + AI */}
+        <div className="w-full lg:w-[320px] flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/5 flex flex-col p-3 gap-3">
           <div className="flex-1 lg:overflow-y-auto custom-scrollbar space-y-3">
             <AiCopilot />
             <SignalCard />
-            <IndicatorGrid />
-            <LiveTrades />
           </div>
         </div>
       </main>
