@@ -109,6 +109,43 @@ async def get_or_compute(key: str, ttl: float, factory: Callable[[], Awaitable[A
 
 
 # ══════════════════════════════════════════════
+# Proxy Support (For Shared IP Bans)
+# ══════════════════════════════════════════════
+
+_PROXIES: List[str] = []
+_PROXY_FETCH_LOCK = asyncio.Lock()
+
+async def _fetch_proxies(session: aiohttp.ClientSession):
+    global _PROXIES
+    try:
+        url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all"
+        async with session.get(url, timeout=10) as resp:
+            if resp.status == 200:
+                text = await resp.text()
+                proxies = [f"http://{p.strip()}" for p in text.split("\n") if p.strip()]
+                if proxies:
+                    _PROXIES = proxies
+                    logger.info(f"Loaded {len(_PROXIES)} free proxies.")
+    except Exception as e:
+        logger.warning(f"Failed to fetch proxies: {e}")
+
+async def _get_proxy(session: aiohttp.ClientSession) -> Optional[str]:
+    global _PROXIES
+    if not _PROXIES:
+        async with _PROXY_FETCH_LOCK:
+            if not _PROXIES:
+                await _fetch_proxies(session)
+    if _PROXIES:
+        return random.choice(_PROXIES)
+    return None
+
+def _remove_proxy(proxy: str):
+    global _PROXIES
+    if proxy in _PROXIES:
+        _PROXIES.remove(proxy)
+
+
+# ══════════════════════════════════════════════
 # Rate-limit / ban protection
 # ══════════════════════════════════════════════
 
