@@ -48,6 +48,21 @@ const CandlestickChart = dynamic(
   }
 );
 
+const DepthChart = dynamic(
+  () => import("@/components/charts/DepthChart"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full min-h-[400px] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Activity className="w-8 h-8 text-emerald-600 animate-pulse" />
+          <span className="text-sm text-emerald-600">Derinlik yükleniyor...</span>
+        </div>
+      </div>
+    ),
+  }
+);
+
 export default function DashboardPage() {
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   const activeInterval = useDashboardStore((s) => s.activeInterval);
@@ -62,6 +77,7 @@ export default function DashboardPage() {
   // Sidebar state — persisted in localStorage (read after mount to avoid hydration mismatch)
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const [chartTab, setChartTab] = useState<"price" | "depth">("price");
 
   const wsManagerRef = useRef<WSManager | null>(null);
 
@@ -281,30 +297,51 @@ export default function DashboardPage() {
               </span>
               <span className="text-[10px] text-gray-500 bg-white/[0.03] px-1.5 py-0.5 rounded">/USDT</span>
               
-              {/* Interval Selector */}
               <div className="flex bg-white/[0.03] rounded-lg p-0.5 ml-1 md:ml-2 border border-white/5 overflow-x-auto">
-                {["1m", "5m", "15m", "1h", "4h"].map((int) => (
-                  <button
-                    key={int}
-                    onClick={() => setInterval(int)}
-                    className={`px-1.5 md:px-2 py-1 rounded text-[10px] font-semibold transition-colors whitespace-nowrap ${
-                      activeInterval === int
-                        ? "bg-white/[0.08] text-white"
-                        : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.05]"
-                    }`}
-                  >
-                    {int}
-                  </button>
-                ))}
+                <button
+                  onClick={() => setChartTab("price")}
+                  className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                    chartTab === "price" ? "bg-blue-500/20 text-blue-400" : "text-gray-500 hover:text-gray-300"
+                  }`}
+                >
+                  Fiyat
+                </button>
+                <button
+                  onClick={() => setChartTab("depth")}
+                  className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                    chartTab === "depth" ? "bg-emerald-500/20 text-emerald-400" : "text-gray-500 hover:text-gray-300"
+                  }`}
+                >
+                  Derinlik
+                </button>
               </div>
+
+              {/* Interval Selector (only show if price tab is active) */}
+              {chartTab === "price" && (
+                <div className="flex bg-white/[0.03] rounded-lg p-0.5 ml-1 md:ml-2 border border-white/5 overflow-x-auto">
+                  {["1m", "5m", "15m", "1h", "4h"].map((int) => (
+                    <button
+                      key={int}
+                      onClick={() => setInterval(int)}
+                      className={`px-1.5 md:px-2 py-1 rounded text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                        activeInterval === int
+                          ? "bg-white/[0.08] text-white"
+                          : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.05]"
+                      }`}
+                    >
+                      {int}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60" />
               <span className="text-[9px] md:text-[10px] text-gray-500 hidden sm:block">TradingView Charts</span>
             </div>
           </div>
-          <div className="w-full h-[300px] md:h-[400px] lg:flex-1 lg:min-h-0">
-            <CandlestickChart />
+          <div className="w-full h-[350px] md:h-[400px] lg:h-[500px] lg:flex-none">
+            {chartTab === "price" ? <CandlestickChart /> : <DepthChart />}
           </div>
           <GlobalMarketPanel />
         </div>
