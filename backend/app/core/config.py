@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     BINANCE_REST_URL: str = "https://data-api.binance.vision"
     BINANCE_WS_URL: str = "wss://data-stream.binance.vision/ws"
 
+    # External APIs
+    COINGLASS_API_KEY: str = ""
+    CRYPTOPANIC_API_KEY: str = ""
+
     # Self-imposed REST weight budget per minute (Binance hard limit: 6000/IP).
     # Kept low because Render outbound IPs are shared with other tenants.
     BINANCE_WEIGHT_BUDGET: int = 1200

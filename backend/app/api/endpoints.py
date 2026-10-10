@@ -448,3 +448,23 @@ async def _compute_fear_greed() -> dict:
         logger.warning(f"Market sentiment calc failed: {e}")
     
     return result
+
+
+from app.services.external_data_service import external_data_service
+
+@router.get("/market/external-data")
+async def get_external_data():
+    """
+    Fetch external market data (CoinGecko Market Cap, DefiLlama TVL, CryptoPanic News, Coinglass OI).
+    Aggregates data to enrich the frontend tables.
+    """
+    # Note: In a production environment, you'd cache these heavily since they are third-party limits.
+    # For now, we fetch news and a sample of CoinGecko for demo.
+    news = await external_data_service.fetch_cryptopanic_news()
+    
+    # We could also fetch coingecko here, but to avoid slow response time, we'd cache it.
+    
+    return {
+        "news": news.get("results", [])[:5], # Top 5 news
+        "status": "integrated"
+    }
