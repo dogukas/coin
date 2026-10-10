@@ -192,7 +192,7 @@ from app.models.candle import TACubeData
 import asyncio
 
 @router.get("/market/ta-cubes", response_model=List[TACubeData])
-async def get_ta_cubes(limit: int = Query(default=24, ge=1, le=50)):
+async def get_ta_cubes(limit: int = Query(default=24, ge=1, le=150)):
     """Fetch TA and Signal data for top coins as 'Cubes' (shared 60s cache)."""
     return await get_or_compute(
         f"ta_cubes_{limit}", TTL_TA_CUBES, lambda: _compute_ta_cubes(limit)
@@ -401,17 +401,6 @@ async def get_fear_greed():
 
 
 async def _compute_fear_greed() -> dict:
-    session = await binance_service._get_session()
-    
-    # Classification translation map
-    tr_map = {
-        "Extreme Fear": "Aşırı Korku",
-        "Fear": "Korku",
-        "Neutral": "Nötr",
-        "Greed": "Açgözlülük",
-        "Extreme Greed": "Aşırı Açgözlülük",
-    }
-    
     result = {
         "value": 50,
         "classification": "Nötr",
@@ -419,27 +408,43 @@ async def _compute_fear_greed() -> dict:
         "global_volume_change": 0,
     }
     
-    # 1. Fear & Greed
-    try:
-        async with session.get("https://api.alternative.me/fng/?limit=1", timeout=aiohttp.ClientTimeout(total=5)) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                if data and data.get("data") and len(data["data"]) > 0:
-                    entry = data["data"][0]
-                    val = int(entry["value"])
-                    eng_class = entry.get("value_classification", "Neutral")
-                    result["value"] = val
-                    result["classification"] = tr_map.get(eng_class, eng_class)
-    except Exception as e:
-        logger.warning(f"Fear & Greed fetch failed: {e}")
-    
-    # 2. Global volume from all tickers
     try:
         all_tickers = await binance_service.fetch_all_24h_tickers()
         if all_tickers:
             total_vol = sum(t["volume_usd"] for t in all_tickers)
             result["global_volume_24h"] = round(total_vol, 2)
+            
+            # Calculate own Fear & Greed from Binance Gainers vs Losers
+            gainers = sum(1 for t in all_tickers if t["change_24h"] > 0)
+            total = len(all_tickers)
+            
+            if total > 0:
+                # Gainer percentage as a base (0 to 100)
+                gainer_pct = (gainers / total) * 100
+                
+                # Add weight to big moves (average positive vs negative changes)
+                avg_change = sum(t["change_24h"] for t in all_tickers) / total
+                
+                # Formula: Base 50 + (avg_change * 5) + (gainer_pct - 50)
+                # This makes it dynamic based purely on Binance market data
+                raw_value = 50 + (avg_change * 5) + (gainer_pct - 50)
+                
+                # Clamp between 0 and 100
+                val = max(0, min(100, int(raw_value)))
+                result["value"] = val
+                
+                if val <= 25:
+                    result["classification"] = "Aşırı Korku"
+                elif val <= 45:
+                    result["classification"] = "Korku"
+                elif val <= 55:
+                    result["classification"] = "Nötr"
+                elif val <= 75:
+                    result["classification"] = "Açgözlülük"
+                else:
+                    result["classification"] = "Aşırı Açgözlülük"
+                    
     except Exception as e:
-        logger.warning(f"Global volume calc failed: {e}")
+        logger.warning(f"Market sentiment calc failed: {e}")
     
     return result

@@ -12,6 +12,8 @@ import SignalCard from "@/components/dashboard/SignalCard";
 import IndicatorGrid from "@/components/dashboard/IndicatorGrid";
 import CoinBrowser from "@/components/dashboard/CoinBrowser";
 import LiveTrades from "@/components/dashboard/LiveTrades";
+import WhaleTracker from "@/components/dashboard/WhaleTracker";
+import LiquidationTracker from "@/components/dashboard/LiquidationTracker";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -355,9 +357,11 @@ export default function DashboardPage() {
 
           {/* Aside Panel (.aside equivalent) */}
           <aside className="flex flex-col gap-4 min-w-0">
-            <LiveTrades />
-            <AiCopilot />
             <SignalCard />
+            <WhaleTracker />
+            <LiquidationTracker />
+            <AiCopilot />
+            <LiveTrades />
           </aside>
 
         </div>
