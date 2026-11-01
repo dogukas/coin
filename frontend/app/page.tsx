@@ -192,6 +192,57 @@ export default function DashboardPage() {
     };
   }, [activeSymbol, activeInterval, handleMessage, handleStatusChange]);
 
+  // Yedek: backend WS 4 sn içinde bağlanmazsa canlı emirleri doğrudan Binance'ten al
+  useEffect(() => {
+    if (wsConnected) return;
+
+    let ws: WebSocket | null = null;
+    let closed = false;
+    const hosts = [
+      "wss://data-stream.binance.vision/ws",
+      "wss://stream.binance.com:9443/ws",
+    ];
+    let hostIdx = 0;
+
+    const open = () => {
+      if (closed) return;
+      ws = new WebSocket(`${hosts[hostIdx]}/${activeSymbol.toLowerCase()}@aggTrade`);
+      ws.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (!d || d.p === undefined) return;
+          handleMessage({
+            type: "trade_update",
+            trade: {
+              price: parseFloat(d.p),
+              quantity: parseFloat(d.q),
+              time: Number(d.T),
+              is_buyer_maker: Boolean(d.m),
+            },
+          } as WSMessage);
+        } catch {
+          // yoksay
+        }
+      };
+      ws.onerror = () => {
+        hostIdx = (hostIdx + 1) % hosts.length;
+      };
+      ws.onclose = () => {
+        if (!closed) setTimeout(open, 2000);
+      };
+    };
+
+    const timer = setTimeout(open, 4000);
+    return () => {
+      closed = true;
+      clearTimeout(timer);
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
+    };
+  }, [wsConnected, activeSymbol, handleMessage]);
+
   return (
     <div className="min-h-screen flex flex-col bg-[#020205] text-white selection:bg-emerald-500/30">
       {/* ── Top Bar (Glassmorphism) ── */}
