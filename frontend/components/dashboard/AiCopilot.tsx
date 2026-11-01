@@ -323,73 +323,7 @@ export default function AiCopilot() {
         </p>
       </section>
 
-      {/* Scale Track */}
-      {(advice.entry || advice.target || advice.stopLoss) && (
-        <section className="flex flex-col gap-2">
-          <h2 className={`m-0 text-[10px] tracking-[0.14em] uppercase ${t.inkDim} font-semibold`}>Hedeften stopa fiyat aralığı</h2>
-          <div className="relative h-2.5 rounded-full overflow-hidden flex">
-            <div className={`flex-1 bg-gradient-to-r ${t.trackWin}`} />
-            <div className={`flex-1 bg-gradient-to-r ${t.trackLose}`} />
-          </div>
-          <div className={`relative h-4 font-mono text-[9px] @sm:text-[10px] ${t.inkDim}`}>
-            <span className="absolute left-0">{formatPrice(advice.target || 0)}</span>
-            <span className="absolute left-1/2 -translate-x-1/2">{formatPrice(advice.entry || 0)}</span>
-            <span className="absolute left-full -translate-x-full">{formatPrice(advice.stopLoss || 0)}</span>
-          </div>
-        </section>
-      )}
 
-      {/* Levels Grid */}
-      {(advice.entry || advice.target || advice.stopLoss) && (
-        <section className="grid grid-cols-3 gap-2 @sm:gap-2.5">
-          <div className={`bg-black/30 border ${t.line} rounded-[14px] p-2 @sm:p-3 flex flex-col gap-1.5 @sm:gap-2 min-w-0`}>
-            <label className="flex items-center gap-1 @sm:gap-1.5 text-[9px] @sm:text-[10px] tracking-[0.12em] uppercase font-semibold text-[#6aa8ff]">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="w-3.5 h-3.5 flex-none hidden @[250px]:block">
-                <circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
-              </svg>
-              Giriş
-            </label>
-            <output className={`font-mono text-[14px] @sm:text-[17px] font-semibold tabular-nums ${t.ink}`}>
-              {formatPrice(advice.entry || 0)}
-            </output>
-            <small className={`font-mono text-[10px] @sm:text-[11px] ${t.inkDim}`}>Referans</small>
-          </div>
-
-          <div className={`bg-black/30 border ${t.line} rounded-[14px] p-2 @sm:p-3 flex flex-col gap-1.5 @sm:gap-2 min-w-0`}>
-            <label className="flex items-center gap-1 @sm:gap-1.5 text-[9px] @sm:text-[10px] tracking-[0.12em] uppercase font-semibold text-[#2fd6a1]">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 flex-none hidden @[250px]:block">
-                <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>
-              </svg>
-              Hedef
-            </label>
-            <output className={`font-mono text-[14px] @sm:text-[17px] font-semibold tabular-nums ${t.ink}`}>
-              {formatPrice(advice.target || 0)}
-            </output>
-            <small className={`font-mono text-[10px] @sm:text-[11px] ${t.inkDim}`}>
-              {advice.target && advice.entry ? (
-                `${((advice.target - advice.entry) / advice.entry * 100).toFixed(2)}%`
-              ) : '-'}
-            </small>
-          </div>
-
-          <div className={`bg-black/30 border ${t.line} rounded-[14px] p-2 @sm:p-3 flex flex-col gap-1.5 @sm:gap-2 min-w-0`}>
-            <label className="flex items-center gap-1 @sm:gap-1.5 text-[9px] @sm:text-[10px] tracking-[0.12em] uppercase font-semibold text-[#ff5a6e]">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" className="w-3.5 h-3.5 flex-none hidden @[250px]:block">
-                <path d="M12 3l8 3v6c0 4.5-3.2 7.6-8 9-4.8-1.4-8-4.5-8-9V6z"/><path d="M12 9v4M12 16h.01" strokeLinecap="round"/>
-              </svg>
-              Stop
-            </label>
-            <output className={`font-mono text-[14px] @sm:text-[17px] font-semibold tabular-nums ${t.ink}`}>
-              {formatPrice(advice.stopLoss || 0)}
-            </output>
-            <small className={`font-mono text-[10px] @sm:text-[11px] ${t.inkDim}`}>
-              {advice.stopLoss && advice.entry ? (
-                `${((advice.stopLoss - advice.entry) / advice.entry * 100).toFixed(2)}%`
-              ) : '-'}
-            </small>
-          </div>
-        </section>
-      )}
 
       {/* Footer */}
       <footer className={`flex justify-between gap-3 flex-wrap text-[11px] @sm:text-xs ${t.inkDim} border-t border-dashed ${t.line} pt-3.5`}>

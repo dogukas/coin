@@ -14,6 +14,9 @@ import CoinBrowser from "@/components/dashboard/CoinBrowser";
 import LiveTrades from "@/components/dashboard/LiveTrades";
 import WhaleTracker from "@/components/dashboard/WhaleTracker";
 import LiquidationTracker from "@/components/dashboard/LiquidationTracker";
+import OrderBook from "@/components/dashboard/OrderBook";
+import CrossExchangeRadar from "@/components/dashboard/CrossExchangeRadar";
+import TradeRiskCalculator from "@/components/dashboard/TradeRiskCalculator";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -28,7 +31,9 @@ import {
   Target,
   Home,
   BarChart3,
-  Fish
+  Fish,
+  Coins,
+  Sparkles
 } from "lucide-react";
 
 import GlobalMarketPanel from "@/components/dashboard/GlobalMarketPanel";
@@ -79,7 +84,9 @@ export default function DashboardPage() {
   // Sidebar state — persisted in localStorage (read after mount to avoid hydration mismatch)
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
-  const [chartTab, setChartTab] = useState<"price" | "depth">("price");
+  const [chartTab, setChartTab] = useState<"price" | "depth" | "orderbook" | "radar">("price");
+  const [asideTab, setAsideTab] = useState<"trade" | "flow" | "ai">("trade");
+  const [flowSubTab, setFlowSubTab] = useState<"trades" | "whales" | "liquidations">("trades");
 
   const wsManagerRef = useRef<WSManager | null>(null);
 
@@ -222,9 +229,14 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          <Link href="/screener" className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 hover:border-blue-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.2)]">
+          <Link href="/screener" className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 border border-violet-500/20 hover:border-violet-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(139,92,246,0.1)]">
             <LayoutGrid size={14} />
-            Küp Ekranı
+            Token Tarayıcı
+          </Link>
+
+          <Link href="/mexc" className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+            <Coins size={14} />
+            MEXC Terminal
           </Link>
 
           {/* Whale Alert Threshold Dropdown */}
@@ -321,7 +333,23 @@ export default function DashboardPage() {
                         chartTab === "depth" ? "bg-[var(--gain)]/20 text-[var(--gain)] border border-[var(--gain)]/30 shadow-sm" : "text-[var(--ink-dim)] hover:text-[var(--ink)]"
                       }`}
                     >
-                      Derinlik
+                      Derinlik Grafiği
+                    </button>
+                    <button
+                      onClick={() => setChartTab("orderbook")}
+                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                        chartTab === "orderbook" ? "bg-violet-500/20 text-violet-400 border border-violet-500/30 shadow-sm" : "text-[var(--ink-dim)] hover:text-[var(--ink)]"
+                      }`}
+                    >
+                      Emir Defteri
+                    </button>
+                    <button
+                      onClick={() => setChartTab("radar")}
+                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                        chartTab === "radar" ? "bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-sm" : "text-[var(--ink-dim)] hover:text-[var(--ink)]"
+                      }`}
+                    >
+                      Çapraz Borsa Radarı
                     </button>
                   </div>
 
@@ -346,22 +374,130 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-[var(--gain)]" />
-                  <span className="text-[9px] md:text-[10px] text-[var(--ink-dim)] hidden sm:block font-mono">TradingView Charts</span>
+                  <span className="text-[9px] md:text-[10px] text-[var(--ink-dim)] hidden sm:block font-mono">
+                    {chartTab === "orderbook"
+                      ? "Binance L2 Depth"
+                      : chartTab === "radar"
+                      ? "Binance vs MEXC Arbitraj"
+                      : chartTab === "depth"
+                      ? "Kümülatif Derinlik"
+                      : "TradingView Charts"}
+                  </span>
                 </div>
               </div>
               <div className="w-full h-[400px] lg:h-[500px]">
-                {chartTab === "price" ? <CandlestickChart /> : <DepthChart />}
+                {chartTab === "price" ? (
+                  <CandlestickChart />
+                ) : chartTab === "depth" ? (
+                  <DepthChart />
+                ) : chartTab === "orderbook" ? (
+                  <OrderBook symbol={activeSymbol} exchange="binance" />
+                ) : (
+                  <div className="h-full overflow-y-auto p-3 custom-scrollbar">
+                    <CrossExchangeRadar />
+                  </div>
+                )}
               </div>
             </div>
           </main>
 
           {/* Aside Panel (.aside equivalent) */}
-          <aside className="flex flex-col gap-4 min-w-0">
-            <SignalCard />
-            <WhaleTracker />
-            <LiquidationTracker />
-            <AiCopilot />
-            <LiveTrades />
+          <aside className="flex flex-col gap-3 min-w-0">
+            {/* Aside Navigation Bar */}
+            <div className="flex bg-[#0b0e14] border border-[var(--line)] rounded-xl p-1 gap-1 shadow-inner">
+              <button
+                onClick={() => setAsideTab("trade")}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-1.5 rounded-lg text-xs font-bold transition-all ${
+                  asideTab === "trade"
+                    ? "bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
+                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <Target size={13} className={asideTab === "trade" ? "text-emerald-400" : ""} />
+                <span className="whitespace-nowrap text-[11px]">İşlem & Sinyal</span>
+              </button>
+
+              <button
+                onClick={() => setAsideTab("flow")}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-1.5 rounded-lg text-xs font-bold transition-all ${
+                  asideTab === "flow"
+                    ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm"
+                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <Activity size={13} className={asideTab === "flow" ? "text-cyan-400" : ""} />
+                <span className="whitespace-nowrap text-[11px]">Piyasa Akışı</span>
+              </button>
+
+              <button
+                onClick={() => setAsideTab("ai")}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-1.5 rounded-lg text-xs font-bold transition-all ${
+                  asideTab === "ai"
+                    ? "bg-gradient-to-r from-purple-500/20 to-indigo-500/20 text-purple-300 border border-purple-500/30 shadow-sm"
+                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <Sparkles size={13} className={asideTab === "ai" ? "text-purple-400" : ""} />
+                <span className="whitespace-nowrap text-[11px]">AI Asistan</span>
+              </button>
+            </div>
+
+            {/* Tab 1: İşlem & Sinyal */}
+            {asideTab === "trade" && (
+              <div className="flex flex-col gap-4 animate-fadeIn">
+                <SignalCard />
+                <TradeRiskCalculator />
+              </div>
+            )}
+
+            {/* Tab 2: Piyasa Akışı (Live Trades / Whale Tracker / Liquidation Tracker) */}
+            {asideTab === "flow" && (
+              <div className="flex flex-col gap-3 animate-fadeIn">
+                <div className="flex bg-black/40 rounded-lg p-0.5 border border-[var(--line)]">
+                  <button
+                    onClick={() => setFlowSubTab("trades")}
+                    className={`flex-1 py-1 px-2 rounded-md text-[10px] font-semibold transition-all ${
+                      flowSubTab === "trades"
+                        ? "bg-white/10 text-white border border-white/10 shadow-sm"
+                        : "text-[var(--ink-dim)] hover:text-white"
+                    }`}
+                  >
+                    ⚡ Canlı Emirler
+                  </button>
+                  <button
+                    onClick={() => setFlowSubTab("whales")}
+                    className={`flex-1 py-1 px-2 rounded-md text-[10px] font-semibold transition-all ${
+                      flowSubTab === "whales"
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-sm"
+                        : "text-[var(--ink-dim)] hover:text-white"
+                    }`}
+                  >
+                    🐋 Balina Avcısı
+                  </button>
+                  <button
+                    onClick={() => setFlowSubTab("liquidations")}
+                    className={`flex-1 py-1 px-2 rounded-md text-[10px] font-semibold transition-all ${
+                      flowSubTab === "liquidations"
+                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 shadow-sm"
+                        : "text-[var(--ink-dim)] hover:text-white"
+                    }`}
+                  >
+                    💀 Likidasyon
+                  </button>
+                </div>
+
+                {flowSubTab === "trades" && <LiveTrades />}
+                {flowSubTab === "whales" && <WhaleTracker />}
+                {flowSubTab === "liquidations" && <LiquidationTracker />}
+              </div>
+            )}
+
+            {/* Tab 3: AI Asistan */}
+            {asideTab === "ai" && (
+              <div className="flex flex-col gap-4 animate-fadeIn">
+                <AiCopilot />
+              </div>
+            )}
           </aside>
 
         </div>

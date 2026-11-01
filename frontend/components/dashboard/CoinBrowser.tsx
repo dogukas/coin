@@ -36,10 +36,19 @@ export default function CoinBrowser() {
   const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [logoMap, setLogoMap] = useState<Record<string, string>>({});
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   const setSymbol = useDashboardStore((s) => s.setSymbol);
+
+  // Fetch logo map once
+  useEffect(() => {
+    fetch(`${API_URL}/api/market/coingecko/logo-map`)
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data) => setLogoMap(data))
+      .catch(() => {});
+  }, []);
 
   // Fetch market overview
   const fetchOverview = useCallback(async () => {
@@ -237,6 +246,7 @@ export default function CoinBrowser() {
               <CoinRow
                 key={coin.symbol}
                 coin={coin}
+                logo={logoMap[coin.symbol]}
                 isActive={coin.symbol === activeSymbol}
                 onClick={handleSelectCoin}
               />
@@ -263,10 +273,12 @@ export default function CoinBrowser() {
 
 function CoinRow({
   coin,
+  logo,
   isActive,
   onClick,
 }: {
   coin: MarketCoin;
+  logo?: string;
   isActive: boolean;
   onClick: (symbol: string) => void;
 }) {
@@ -291,16 +303,29 @@ function CoinRow({
       {isActive && (
         <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
       )}
-      {/* Coin icon placeholder */}
-      <div
-        className={`
-          w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0
-          text-[10px] font-bold
-          ${isActive ? "bg-emerald-500/20 text-emerald-400" : "bg-white/[0.05] text-gray-400"}
-        `}
-      >
-        {baseName.slice(0, 2)}
-      </div>
+      {/* Coin logo / icon */}
+      {logo ? (
+        <img
+          src={logo}
+          alt={baseName}
+          width={28}
+          height={28}
+          className="w-7 h-7 rounded-full flex-shrink-0 object-contain"
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = "none";
+          }}
+        />
+      ) : (
+        <div
+          className={`
+            w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0
+            text-[10px] font-bold
+            ${isActive ? "bg-emerald-500/20 text-emerald-400" : "bg-white/[0.05] text-gray-400"}
+          `}
+        >
+          {baseName.slice(0, 2)}
+        </div>
+      )}
 
       {/* Name + Symbol */}
       <div className="flex-1 min-w-0 text-left">

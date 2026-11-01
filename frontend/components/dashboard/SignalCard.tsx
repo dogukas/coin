@@ -6,6 +6,7 @@ import { TrendingUp, TrendingDown, Minus, HelpCircle } from "lucide-react";
 
 export default function SignalCard() {
   const signalData = useDashboardStore((s) => s.signalData);
+  const activeSymbol = useDashboardStore((s) => s.activeSymbol);
 
   const score = signalData?.score ?? 0;
   const label = signalData?.label ?? "BEKLE / NÖTR";
@@ -81,7 +82,12 @@ export default function SignalCard() {
       
       {/* Header */}
       <header className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="m-0 text-[14px] tracking-[0.14em] font-bold uppercase text-[#f6e9ec]">Sinyal Durumu</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="m-0 text-[14px] tracking-[0.14em] font-bold uppercase text-[#f6e9ec]">Sinyal Durumu</h1>
+          <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-white/10 text-emerald-400 font-bold border border-white/5">
+            {activeSymbol.replace("USDT", "")}
+          </span>
+        </div>
         <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold tracking-[0.1em] uppercase px-3 py-1.5 rounded-full border ${t.pillBg}`}>
           {label}
         </span>

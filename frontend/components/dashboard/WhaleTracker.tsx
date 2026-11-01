@@ -23,14 +23,14 @@ export default function WhaleTracker() {
     if (!trades || trades.length === 0) return;
     
     const latestTrade = trades[0];
-    const tradeValue = latestTrade.price * latestTrade.qty;
+    const tradeValue = latestTrade.price * latestTrade.quantity;
     
     // Only capture very large trades (Whales)
     if (tradeValue >= WHALE_THRESHOLD_USD) {
       setWhaleTrades((prev) => {
-        // Avoid duplicates (checking by timestamp/price/qty)
+        // Avoid duplicates (checking by timestamp/price/quantity)
         const isDuplicate = prev.some(
-          t => t.time === latestTrade.time && t.qty === latestTrade.qty
+          t => t.time === latestTrade.time && t.quantity === latestTrade.quantity
         );
         if (isDuplicate) return prev;
         
@@ -40,7 +40,7 @@ export default function WhaleTracker() {
       });
       
       // Flash effect
-      const id = `${latestTrade.time}-${latestTrade.qty}`;
+      const id = `${latestTrade.time}-${latestTrade.quantity}`;
       setFlashingId(id);
       setTimeout(() => setFlashingId(null), 1000);
     }
@@ -70,9 +70,9 @@ export default function WhaleTracker() {
             </div>
           ) : (
             whaleTrades.map((t, i) => {
-              const id = `${t.time}-${t.qty}`;
+              const id = `${t.time}-${t.quantity}`;
               const isFlashing = flashingId === id;
-              const isBuy = t.isBuyerMaker === false; // If buyer is not maker, it's a taker BUY
+              const isBuy = t.is_buyer_maker === false; // If buyer is not maker, it's a taker BUY
               
               return (
                 <div 
@@ -89,7 +89,7 @@ export default function WhaleTracker() {
                   
                   <div className="flex flex-col items-end">
                     <span className="font-bold text-[var(--ink)]">${(t.value / 1000).toFixed(1)}k</span>
-                    <span className="text-[9px] text-[var(--ink-faint)]">{formatNumber(t.qty)} {activeSymbol.replace("USDT","")}</span>
+                    <span className="text-[9px] text-[var(--ink-faint)]">{formatNumber(t.quantity)} {activeSymbol.replace("USDT","")}</span>
                   </div>
                 </div>
               );

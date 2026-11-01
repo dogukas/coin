@@ -39,7 +39,7 @@ export default function RootLayout({
         <div className="relative z-10">{children}</div>
         
         {/* Toast Notifications */}
-        <Toaster position="top-right" theme="dark" richColors />
+        <Toaster position="bottom-right" theme="dark" richColors />
         
         {/* Global Client-side Providers (Pump Alerts etc.) */}
         <ClientProviders />

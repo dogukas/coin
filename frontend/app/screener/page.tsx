@@ -1,298 +1,437 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Loader2, LayoutGrid, Flame, ArrowUpRight, ArrowDownRight, Activity } from "lucide-react";
-import { TACubeData, getSignalColor, formatPrice, getSignalLevel, API_URL } from "@/lib/utils";
+import {
+  ArrowLeft, Loader2, LayoutGrid, ArrowUpRight, ArrowDownRight,
+  Activity, TrendingUp, Search, RefreshCw, Flame, BarChart2, Zap
+} from "lucide-react";
+import { getSignalColor, formatPrice, API_URL } from "@/lib/utils";
 
+// ── Tipler ──────────────────────────────────────────────────────────────────
+interface EnrichedCoin {
+  // Binance (Teknik Analiz)
+  symbol: string;
+  price: number;
+  change_24h: number;
+  volume_usd: number;
+  signal_score: number;
+  signal_level: string;
+  rsi_14: number | null;
+  macd_trend: string | null;
+  buy_pressure_pct: number;
+  sparkline: number[];
+  // CoinGecko (Temel Analiz)
+  logo: string;
+  market_cap: number;
+  market_cap_rank: number;
+  circulating_supply: number;
+  ath_change_pct: number;
+}
+
+interface TrendingCoin {
+  symbol: string;
+  name: string;
+  image: string;
+  market_cap_rank: number;
+}
+
+type FilterType = "all" | "strong_buy" | "high_pressure" | "oversold" | "top_mcap";
+
+// ── Yardımcı Fonksiyonlar ────────────────────────────────────────────────────
+function formatMarketCap(n: number): string {
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (n >= 1e9)  return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6)  return `$${(n / 1e6).toFixed(2)}M`;
+  return `$${n.toFixed(0)}`;
+}
+
+function getSignalLabel(level: string): string {
+  const map: Record<string, string> = {
+    "GÜÇLÜ AL SİNYALİ": "GÜÇLÜ AL",
+    "AL SİNYALİ":       "AL",
+    "BEKLE / NÖTR":     "BEKLE",
+    "SAT / ZAYIF":      "SAT",
+  };
+  return map[level] ?? level;
+}
+
+// ── Ana Sayfa ────────────────────────────────────────────────────────────────
 export default function ScreenerPage() {
-  const [cubes, setCubes] = useState<TACubeData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [coins, setCoins]       = useState<EnrichedCoin[]>([]);
+  const [trending, setTrending] = useState<TrendingCoin[]>([]);
+  const [loading, setLoading]   = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  
-  // Filters
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<"all" | "strong_buy" | "high_pressure" | "oversold">("all");
 
-  const fetchCubes = async () => {
+  const [search, setSearch]         = useState("");
+  const [filter, setFilter]         = useState<FilterType>("all");
+  const [sortBy, setSortBy]         = useState<"mcap" | "signal" | "volume" | "change">("mcap");
+
+  // ── Veri Çekme: Enriched Screener (Binance + CoinGecko) ──────────────────
+  const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/market/ta-cubes?limit=24`);
-      if (res.ok) {
-        const data = await res.json();
-        setCubes(data);
+      const [coinsRes, trendRes] = await Promise.all([
+        fetch(`${API_URL}/api/market/enriched-screener?limit=60`),
+        fetch(`${API_URL}/api/market/coingecko/trending`),
+      ]);
+
+      if (coinsRes.ok) {
+        const data = await coinsRes.json();
+        setCoins(data);
         setLastUpdated(new Date());
       }
+      if (trendRes.ok) {
+        setTrending(await trendRes.json());
+      }
     } catch (e) {
-      console.error(e);
+      console.error("Veri çekme hatası:", e);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchCubes();
-    const interval = setInterval(fetchCubes, 30000); // 30s auto-refresh
-    return () => clearInterval(interval);
+    fetchData();
+    const iv = setInterval(fetchData, 60_000); // 60s — enriched verisi 60s cache'li
+    return () => clearInterval(iv);
   }, []);
 
-  // Apply filters
-  const filteredCubes = cubes.filter((c) => {
-    // 1. Search filter
-    if (searchQuery && !c.symbol.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-    
-    // 2. Type filter
-    if (filterType === "strong_buy" && c.signal_score < 65) return false;
-    if (filterType === "high_pressure" && c.buy_pressure_pct < 60) return false;
-    if (filterType === "oversold" && (c.rsi_14 === null || c.rsi_14 > 40)) return false;
-    
-    return true;
-  });
+  // ── Filtreleme + Sıralama ────────────────────────────────────────────────
+  const displayed = useMemo(() => {
+    let list = coins.filter((c) => {
+      if (search && !c.symbol.toLowerCase().includes(search.toLowerCase())) return false;
+      if (filter === "strong_buy"    && c.signal_score < 65)                  return false;
+      if (filter === "high_pressure" && c.buy_pressure_pct < 60)              return false;
+      if (filter === "oversold"      && (!c.rsi_14 || c.rsi_14 > 40))        return false;
+      if (filter === "top_mcap"      && c.market_cap_rank > 20)              return false;
+      return true;
+    });
 
+    list.sort((a, b) => {
+      if (sortBy === "mcap")    return a.market_cap_rank - b.market_cap_rank;
+      if (sortBy === "signal")  return b.signal_score - a.signal_score;
+      if (sortBy === "volume")  return b.volume_usd - a.volume_usd;
+      if (sortBy === "change")  return b.change_24h - a.change_24h;
+      return 0;
+    });
+
+    return list;
+  }, [coins, search, filter, sortBy]);
+
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-white">
-      {/* Header */}
-      <header className="flex flex-wrap items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-white/5 bg-slate-900/50 gap-3">
-        <div className="flex items-center gap-3 md:gap-4">
+    <div className="min-h-screen flex flex-col bg-[#0a0b0d] text-white">
+
+      {/* ── HEADER ───────────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-20 flex items-center justify-between px-6 py-3 border-b border-white/5 bg-[#0a0b0d]/90 backdrop-blur">
+        <div className="flex items-center gap-3">
           <Link href="/" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
-            <ArrowLeft size={18} />
+            <ArrowLeft size={16} />
           </Link>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <LayoutGrid size={16} className="text-white md:w-5 md:h-5" />
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+              <LayoutGrid size={14} />
             </div>
             <div>
-              <h1 className="text-base md:text-lg font-bold">Teknik Analiz & Emir Akışı</h1>
-              <p className="text-[10px] md:text-xs text-gray-400 hidden sm:block">Piyasadaki en hacimli coinlerin TA ve Alış Baskısı analizleri</p>
+              <h1 className="text-sm font-bold">Token Tarayıcı</h1>
+              <p className="text-[10px] text-gray-500">Binance TA · CoinGecko Temel Analiz</p>
             </div>
           </div>
         </div>
-        
-        <div className="flex items-center gap-4">
-          {loading && <Loader2 size={16} className="text-gray-400 animate-spin" />}
+
+        <div className="flex items-center gap-3">
+          {loading && <Loader2 size={14} className="text-gray-500 animate-spin" />}
           {lastUpdated && (
-            <div className="hidden md:block text-xs text-gray-500 font-mono">
-              Güncelleme: {lastUpdated.toLocaleTimeString('tr-TR')}
-            </div>
+            <span className="text-[10px] text-gray-600 font-mono hidden md:block">
+              {lastUpdated.toLocaleTimeString("tr-TR")}
+            </span>
           )}
-          <button 
-            onClick={fetchCubes}
+          <button
+            onClick={fetchData}
             disabled={loading}
-            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-xs font-bold transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-40 rounded-lg text-xs text-gray-300 transition-colors"
           >
+            <RefreshCw size={12} />
             Yenile
           </button>
         </div>
       </header>
 
-      {/* Filters Toolbar */}
-      <div className="px-6 py-3 border-b border-white/5 bg-slate-900/30 flex flex-col sm:flex-row items-center gap-4 justify-between">
-        <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
-          <FilterButton 
-            active={filterType === "all"} 
-            onClick={() => setFilterType("all")}
-            label="Tümü"
-          />
-          <FilterButton 
-            active={filterType === "strong_buy"} 
-            onClick={() => setFilterType("strong_buy")}
-            label="Yüksek Sinyal (Skor > 65)"
-            color="emerald"
-          />
-          <FilterButton 
-            active={filterType === "high_pressure"} 
-            onClick={() => setFilterType("high_pressure")}
-            label="Yoğun Alım (>%60)"
-            color="orange"
-          />
-          <FilterButton 
-            active={filterType === "oversold"} 
-            onClick={() => setFilterType("oversold")}
-            label="Aşırı Satım (RSI < 40)"
-            color="blue"
-          />
+      {/* ── TREND COİNLER ────────────────────────────────────────────────── */}
+      {trending.length > 0 && (
+        <div className="px-6 py-2.5 border-b border-white/5 bg-white/[0.02]">
+          <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide">
+            <div className="flex items-center gap-1.5 text-[10px] text-amber-400 font-semibold shrink-0">
+              <Flame size={11} />
+              TREND
+            </div>
+            {trending.map((t) => (
+              <div key={t.symbol} className="flex items-center gap-1.5 shrink-0 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer transition-colors">
+                {t.image && (
+                  <img src={t.image} alt={t.name} width={14} height={14} className="rounded-full" />
+                )}
+                <span className="text-[11px] font-semibold text-gray-200">{t.symbol.replace("USDT", "")}</span>
+                {t.market_cap_rank && (
+                  <span className="text-[9px] text-gray-500">#{t.market_cap_rank}</span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-        
-        <div className="w-full sm:w-64">
+      )}
+
+      {/* ── FİLTRE + ARAMA TOOLBAR ───────────────────────────────────────── */}
+      <div className="px-6 py-3 border-b border-white/5 flex flex-wrap items-center gap-3">
+        {/* Arama */}
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
             type="text"
-            placeholder="Coin Ara (Örn: BTC)"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+            placeholder="Coin ara..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8 pr-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs focus:outline-none focus:border-violet-500 w-40 transition-colors"
           />
+        </div>
+
+        {/* Filtreler */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(["all", "strong_buy", "high_pressure", "oversold", "top_mcap"] as FilterType[]).map((f) => {
+            const labels: Record<FilterType, string> = {
+              all: "Tümü",
+              strong_buy: "Güçlü Al",
+              high_pressure: "Alım Baskısı",
+              oversold: "Aşırı Satım",
+              top_mcap: "Top 20 Mcap",
+            };
+            return (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
+                  filter === f
+                    ? "bg-violet-600 border-violet-500 text-white"
+                    : "bg-white/5 border-white/10 text-gray-400 hover:text-white hover:border-white/20"
+                }`}
+              >
+                {labels[f]}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Sıralama */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-600">Sırala:</span>
+          {(["mcap", "signal", "volume", "change"] as const).map((s) => {
+            const labels = { mcap: "Mcap", signal: "Sinyal", volume: "Hacim", change: "Değişim" };
+            return (
+              <button
+                key={s}
+                onClick={() => setSortBy(s)}
+                className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors ${
+                  sortBy === s ? "text-violet-400" : "text-gray-600 hover:text-gray-300"
+                }`}
+              >
+                {labels[s]}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Grid */}
-      <main className="flex-1 p-3 md:p-4 lg:p-6 overflow-y-auto custom-scrollbar">
-        {cubes.length === 0 && !loading ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500">
-            Veri bulunamadı. Lütfen API'nin çalıştığından emin olun.
+      {/* ── TABLO ────────────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-auto">
+        {loading && coins.length === 0 ? (
+          <div className="flex items-center justify-center h-64 gap-2 text-gray-500">
+            <Loader2 size={16} className="animate-spin" />
+            <span className="text-sm">Veriler yükleniyor...</span>
           </div>
-        ) : filteredCubes.length === 0 && !loading ? (
-          <div className="flex flex-col items-center justify-center h-[50vh] text-gray-500">
-            <div className="text-4xl mb-3">🔍</div>
-            <p>Bu filtrelere uygun coin bulunamadı.</p>
-            <button 
-              onClick={() => { setFilterType("all"); setSearchQuery(""); }}
-              className="mt-4 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition-colors"
-            >
-              Filtreleri Temizle
+        ) : displayed.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-gray-500 gap-2">
+            <Search size={24} />
+            <p className="text-sm">Sonuç bulunamadı</p>
+            <button onClick={() => { setFilter("all"); setSearch(""); }} className="text-xs text-violet-400 hover:underline">
+              Filtreleri temizle
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            {filteredCubes.map((c) => (
-              <CubeCard key={c.symbol} data={c} />
-            ))}
-          </div>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-white/5 text-[10px] text-gray-500 uppercase tracking-wider">
+                <th className="text-left px-6 py-3 font-medium">#</th>
+                <th className="text-left px-2 py-3 font-medium">Coin</th>
+                <th className="text-right px-4 py-3 font-medium">Fiyat</th>
+                <th className="text-right px-4 py-3 font-medium">24s %</th>
+                <th className="text-right px-4 py-3 font-medium hidden md:table-cell">Piyasa Değeri</th>
+                <th className="text-right px-4 py-3 font-medium hidden lg:table-cell">Hacim</th>
+                <th className="text-center px-4 py-3 font-medium hidden lg:table-cell">RSI</th>
+                <th className="text-center px-4 py-3 font-medium hidden lg:table-cell">MACD</th>
+                <th className="text-right px-4 py-3 font-medium hidden md:table-cell">Alım %</th>
+                <th className="text-center px-4 py-3 font-medium">Sinyal</th>
+                <th className="text-right px-4 py-3 font-medium hidden xl:table-cell">Grafik</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayed.map((c, i) => {
+                const isPositive = c.change_24h >= 0;
+                const signalColor = getSignalColor(c.signal_score);
+                const isOversold = c.rsi_14 !== null && c.rsi_14 < 35;
+                const isOverbought = c.rsi_14 !== null && c.rsi_14 > 70;
+                const baseSymbol = c.symbol.replace("USDT", "");
+
+                return (
+                  <tr
+                    key={c.symbol}
+                    className="border-b border-white/[0.03] hover:bg-white/[0.025] transition-colors group"
+                  >
+                    {/* Rank */}
+                    <td className="px-6 py-3 text-[11px] text-gray-600 font-mono">
+                      {c.market_cap_rank < 9999 ? `#${c.market_cap_rank}` : `${i + 1}`}
+                    </td>
+
+                    {/* Coin */}
+                    <td className="px-2 py-3">
+                      <div className="flex items-center gap-2.5">
+                        {c.logo ? (
+                          <img
+                            src={c.logo}
+                            alt={baseSymbol}
+                            width={24}
+                            height={24}
+                            className="rounded-full shrink-0"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[9px] font-bold shrink-0">
+                            {baseSymbol[0]}
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-semibold text-[13px] text-white">{baseSymbol}</div>
+                          <div className="text-[10px] text-gray-600">USDT</div>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Fiyat */}
+                    <td className="px-4 py-3 text-right font-mono text-[12px] text-white">
+                      ${formatPrice(c.price)}
+                    </td>
+
+                    {/* 24s Değişim */}
+                    <td className={`px-4 py-3 text-right font-semibold text-[12px] ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
+                      <div className="flex items-center justify-end gap-0.5">
+                        {isPositive ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
+                        {Math.abs(c.change_24h).toFixed(2)}%
+                      </div>
+                    </td>
+
+                    {/* Piyasa Değeri */}
+                    <td className="px-4 py-3 text-right text-[11px] text-gray-400 hidden md:table-cell font-mono">
+                      {c.market_cap > 0 ? formatMarketCap(c.market_cap) : "—"}
+                    </td>
+
+                    {/* Hacim */}
+                    <td className="px-4 py-3 text-right text-[11px] text-gray-400 hidden lg:table-cell font-mono">
+                      {formatMarketCap(c.volume_usd)}
+                    </td>
+
+                    {/* RSI */}
+                    <td className="px-4 py-3 text-center hidden lg:table-cell">
+                      <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded ${
+                        isOversold ? "bg-blue-500/20 text-blue-300" :
+                        isOverbought ? "bg-rose-500/20 text-rose-300" :
+                        "text-gray-400"
+                      }`}>
+                        {c.rsi_14 ? c.rsi_14.toFixed(1) : "—"}
+                      </span>
+                    </td>
+
+                    {/* MACD */}
+                    <td className="px-4 py-3 text-center hidden lg:table-cell">
+                      <span className={`text-[10px] font-semibold ${
+                        c.macd_trend === "bullish" ? "text-emerald-400" :
+                        c.macd_trend === "bearish" ? "text-rose-400" : "text-gray-600"
+                      }`}>
+                        {c.macd_trend === "bullish" ? "↑ Yükseliş" : c.macd_trend === "bearish" ? "↓ Düşüş" : "—"}
+                      </span>
+                    </td>
+
+                    {/* Alım Baskısı */}
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className={`text-[10px] font-bold ${c.buy_pressure_pct > 60 ? "text-orange-400" : "text-gray-400"}`}>
+                          %{c.buy_pressure_pct.toFixed(1)}
+                        </span>
+                        <div className="w-16 h-1 bg-white/5 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${c.buy_pressure_pct > 60 ? "bg-orange-500" : "bg-blue-500/60"}`}
+                            style={{ width: `${c.buy_pressure_pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Sinyal */}
+                    <td className="px-4 py-3 text-center">
+                      <div
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold"
+                        style={{
+                          backgroundColor: `${signalColor}18`,
+                          border: `1px solid ${signalColor}35`,
+                          color: signalColor,
+                        }}
+                      >
+                        <Zap size={9} />
+                        {c.signal_score}
+                        <span className="hidden sm:inline opacity-70">· {getSignalLabel(c.signal_level)}</span>
+                      </div>
+                    </td>
+
+                    {/* Mini Grafik */}
+                    <td className="px-4 py-3 hidden xl:table-cell">
+                      <MiniSparkline data={c.sparkline} positive={isPositive} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </main>
+
+      {/* ── FOOTER ────────────────────────────────────────────────────────── */}
+      <footer className="px-6 py-2.5 border-t border-white/5 flex items-center justify-between text-[10px] text-gray-600">
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1"><BarChart2 size={10} /> Teknik Analiz: <span className="text-gray-400">Binance WebSocket</span></span>
+          <span className="flex items-center gap-1"><TrendingUp size={10} /> Temel Analiz: <span className="text-gray-400">CoinGecko API</span></span>
+        </div>
+        <span>{displayed.length} coin gösteriliyor</span>
+      </footer>
     </div>
   );
 }
 
-function CubeCard({ data }: { data: TACubeData }) {
-  const isPositive = data.change_24h >= 0;
-  const isStrongBuy = data.buy_pressure_pct > 60;
-  const signalColor = getSignalColor(data.signal_score);
-  
-  // Convert signal_level enum-like string to Turkish
-  const getSignalText = (level: string) => {
-    switch(level) {
-      case "strong_buy": return "GÜÇLÜ AL";
-      case "buy": return "AL";
-      case "hold": return "BEKLE / NÖTR";
-      case "sell": return "SAT";
-      default: return level;
-    }
-  };
+// ── Mini Sparkline ────────────────────────────────────────────────────────────
+function MiniSparkline({ data, positive }: { data: number[]; positive: boolean }) {
+  if (!data || data.length < 2) return <span className="text-gray-700 text-[10px]">—</span>;
 
-  return (
-    <div className="bg-slate-900 border border-white/5 rounded-xl p-4 flex flex-col gap-3 hover:border-white/20 transition-colors shadow-lg">
-      
-      {/* Top row: Symbol and Price */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-bold tracking-tight">{data.symbol.replace("USDT", "")}</h2>
-          <span className="text-[10px] text-gray-500">/USDT</span>
-        </div>
-        <div className="text-right">
-          <div className="text-sm font-mono font-bold">${formatPrice(data.price)}</div>
-          <div className={`text-xs font-semibold flex items-center justify-end gap-0.5 ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
-            {isPositive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-            {Math.abs(data.change_24h).toFixed(2)}%
-          </div>
-        </div>
-      </div>
-
-      {/* Buy Pressure Progress */}
-      <div className="pt-2 border-t border-white/5">
-        <div className="flex justify-between items-center mb-1.5">
-          <span className="text-xs text-gray-400">Emir Baskısı (Alış)</span>
-          <span className={`text-xs font-bold ${isStrongBuy ? "text-orange-400" : "text-gray-300"}`}>
-            %{data.buy_pressure_pct}
-          </span>
-        </div>
-        <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden flex">
-          <div 
-            className={`h-full rounded-full transition-all duration-500 ${isStrongBuy ? 'bg-orange-500' : 'bg-blue-500'}`}
-            style={{ width: `${data.buy_pressure_pct}%` }}
-          />
-          <div 
-            className="h-full bg-rose-500/50 rounded-r-full transition-all duration-500"
-            style={{ width: `${100 - data.buy_pressure_pct}%` }}
-          />
-        </div>
-      </div>
-
-      {/* TA Indicators */}
-      <div className="grid grid-cols-2 gap-2 mt-1">
-        <div className="bg-white/5 rounded-lg p-2 flex flex-col items-center justify-center">
-          <span className="text-[9px] text-gray-500 uppercase tracking-wider">RSI (14)</span>
-          <span className="text-xs font-mono font-semibold text-white">
-            {data.rsi_14 ? data.rsi_14.toFixed(1) : "—"}
-          </span>
-        </div>
-        <div className="bg-white/5 rounded-lg p-2 flex flex-col items-center justify-center">
-          <span className="text-[9px] text-gray-500 uppercase tracking-wider">MACD</span>
-          <span className={`text-xs font-bold ${data.macd_trend === 'bullish' ? 'text-emerald-400' : data.macd_trend === 'bearish' ? 'text-rose-400' : 'text-gray-400'}`}>
-            {data.macd_trend === 'bullish' ? "Yükseliş" : data.macd_trend === 'bearish' ? "Düşüş" : "—"}
-          </span>
-        </div>
-      </div>
-
-      {/* Sparkline Chart */}
-      {data.sparkline && data.sparkline.length > 0 && (
-        <Sparkline 
-          data={data.sparkline} 
-          color={isPositive ? "#34d399" : "#fb7185"} 
-        />
-      )}
-
-      {/* Overall Score Badge */}
-      <div 
-        className="mt-1 py-2 rounded-lg text-center flex items-center justify-center gap-2"
-        style={{ backgroundColor: `${signalColor}15`, border: `1px solid ${signalColor}30` }}
-      >
-        <Activity size={14} style={{ color: signalColor }} />
-        <span className="text-xs font-bold" style={{ color: signalColor }}>
-          {getSignalText(data.signal_level)} ({data.signal_score})
-        </span>
-      </div>
-
-    </div>
-  );
-}
-
-function FilterButton({ active, onClick, label, color = "blue" }: { active: boolean, onClick: () => void, label: string, color?: "blue" | "emerald" | "orange" }) {
-  const colorStyles = {
-    blue: active ? "bg-blue-600 text-white border-blue-500" : "bg-slate-800 text-gray-400 border-white/5 hover:border-blue-500/50 hover:text-blue-400",
-    emerald: active ? "bg-emerald-600 text-white border-emerald-500" : "bg-slate-800 text-gray-400 border-white/5 hover:border-emerald-500/50 hover:text-emerald-400",
-    orange: active ? "bg-orange-600 text-white border-orange-500" : "bg-slate-800 text-gray-400 border-white/5 hover:border-orange-500/50 hover:text-orange-400",
-  };
-
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap ${colorStyles[color]}`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function Sparkline({ data, color }: { data: number[], color: string }) {
-  if (!data || data.length < 2) return null;
-  
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
-  
-  const width = 100;
-  const height = 30;
-  
-  const points = data.map((val, i) => {
-    const x = (i / (data.length - 1)) * width;
-    const y = height - ((val - min) / range) * height;
-    return `${x},${y}`;
-  }).join(" ");
-  
+  const W = 80, H = 24;
+
+  const points = data
+    .map((v, i) => `${(i / (data.length - 1)) * W},${H - ((v - min) / range) * H}`)
+    .join(" ");
+
   return (
-    <div className="w-full h-8 mt-2 opacity-80">
-      <svg width="100%" height="100%" viewBox="0 0 100 30" preserveAspectRatio="none" className="overflow-visible">
-        <polyline
-          fill="none"
-          stroke={color}
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={points}
-        />
-      </svg>
-    </div>
+    <svg width={W} height={H} className="opacity-70">
+      <polyline fill="none" stroke={positive ? "#34d399" : "#fb7185"} strokeWidth="1.5"
+        strokeLinecap="round" strokeLinejoin="round" points={points} />
+    </svg>
   );
 }

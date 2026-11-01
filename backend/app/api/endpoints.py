@@ -450,21 +450,94 @@ async def _compute_fear_greed() -> dict:
     return result
 
 
-from app.services.external_data_service import external_data_service
+from app.services.coingecko_service import coingecko_service
 
-@router.get("/market/external-data")
-async def get_external_data():
+# ══════════════════════════════════════════════
+# CoinGecko Endpoint'leri — İzole Akışlar
+# ══════════════════════════════════════════════
+
+@router.get("/market/coingecko/markets")
+async def get_coingecko_markets():
     """
-    Fetch external market data (CoinGecko Market Cap, DefiLlama TVL, CryptoPanic News, Coinglass OI).
-    Aggregates data to enrich the frontend tables.
+    CoinGecko'dan top 250 coin: logo, piyasa değeri, market cap rank, arz.
+    Binance fiyat verisiyle karıştırılmaz — saf CoinGecko akışı.
+    Cache: 5 dakika.
     """
-    # Note: In a production environment, you'd cache these heavily since they are third-party limits.
-    # For now, we fetch news and a sample of CoinGecko for demo.
-    news = await external_data_service.fetch_cryptopanic_news()
-    
-    # We could also fetch coingecko here, but to avoid slow response time, we'd cache it.
-    
-    return {
-        "news": news.get("results", [])[:5], # Top 5 news
-        "status": "integrated"
-    }
+    return await coingecko_service.fetch_market_data()
+
+
+@router.get("/market/coingecko/trending")
+async def get_coingecko_trending():
+    """
+    Son 24 saatte en çok aranan / trend 7 coin.
+    Cache: 5 dakika.
+    """
+    return await coingecko_service.fetch_trending()
+
+
+@router.get("/market/coingecko/categories")
+async def get_coingecko_categories():
+    """
+    Kripto kategorileri: DeFi, AI, Meme, Layer1 vb. — market cap'e göre sıralı.
+    Cache: 10 dakika.
+    """
+    return await coingecko_service.fetch_categories()
+
+
+@router.get("/market/coingecko/logo-map")
+async def get_logo_map():
+    """
+    {BTCUSDT: 'https://...logo.png'} formatında sembol → logo haritası.
+    Tüm tablolar bu endpoint'ten logo çeker.
+    Cache: 5 dakika.
+    """
+    return await coingecko_service.get_logo_map()
+
+
+@router.get("/market/enriched-screener")
+async def get_enriched_screener(limit: int = Query(default=50, ge=1, le=150)):
+    """
+    Binance TA verisi + CoinGecko piyasa değeri birleşimi.
+    Her coin için: sinyal skoru (Binance) + market cap rank (CoinGecko) + logo.
+    İki akış ayrı çalışır, sadece sonuçta birleşir.
+    Cache: 60 saniye.
+    """
+    import asyncio
+
+    # İki farklı kaynak paralel çalışır — biri diğerini beklemez
+    ta_task = get_or_compute(
+        f"ta_cubes_{limit}", TTL_TA_CUBES, lambda: _compute_ta_cubes(limit)
+    )
+    mcap_task = coingecko_service.get_market_cap_map()
+    logo_task = coingecko_service.get_logo_map()
+
+    ta_data, mcap_map, logo_map = await asyncio.gather(ta_task, mcap_task, logo_task)
+
+    # Birleştirme: Binance sembolüne göre CoinGecko verisini ekle
+    enriched = []
+    for coin in ta_data:
+        sym = coin.symbol
+        mcap = mcap_map.get(sym, {})
+        enriched.append({
+            # ── Binance (Teknik Analiz) ──
+            "symbol": sym,
+            "price": coin.price,
+            "change_24h": coin.change_24h,
+            "volume_usd": coin.volume_usd,
+            "signal_score": coin.signal_score,
+            "signal_level": coin.signal_level,
+            "rsi_14": coin.rsi_14,
+            "macd_trend": coin.macd_trend,
+            "buy_pressure_pct": coin.buy_pressure_pct,
+            "sparkline": coin.sparkline,
+            # ── CoinGecko (Temel Analiz) ──
+            "logo": logo_map.get(sym, ""),
+            "market_cap": mcap.get("market_cap", 0),
+            "market_cap_rank": mcap.get("market_cap_rank", 9999),
+            "circulating_supply": mcap.get("circulating_supply", 0),
+            "ath_change_pct": mcap.get("ath_change_pct", 0),
+        })
+
+    # Market cap rank'e göre sırala (en büyük önce)
+    enriched.sort(key=lambda x: x["market_cap_rank"])
+    return enriched
