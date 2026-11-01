@@ -220,11 +220,20 @@ export const API_URL =
     ? (process.env.NEXT_PUBLIC_API_URL || "")
     : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
 
-export const WS_BASE_URL =
-  typeof window !== "undefined" &&
-  (window.location.protocol === "https:" || !window.location.hostname.includes("localhost"))
-    ? (process.env.NEXT_PUBLIC_WS_URL || `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`)
-    : (process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000");
+export const WS_BASE_URL = (() => {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  // WS adresi verilmediyse Render API adresinden türet (https→wss, http→ws)
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/^http/, "ws");
+  }
+  if (
+    typeof window !== "undefined" &&
+    (window.location.protocol === "https:" || !window.location.hostname.includes("localhost"))
+  ) {
+    return `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
+  }
+  return "ws://localhost:8000";
+})();
 
 export class WSManager {
   private ws: WebSocket | null = null;
