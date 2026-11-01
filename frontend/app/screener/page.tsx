@@ -72,18 +72,34 @@ export default function ScreenerPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [coinsRes, trendRes] = await Promise.all([
-        fetch(`${API_URL}/api/market/enriched-screener?limit=60`),
-        fetch(`${API_URL}/api/market/coingecko/trending`),
-      ]);
+      const isRemote =
+        typeof window !== "undefined" &&
+        (window.location.protocol === "https:" || !window.location.hostname.includes("localhost"));
+      const base = isRemote ? "" : (API_URL || "");
 
-      if (coinsRes.ok) {
-        const data = await coinsRes.json();
-        setCoins(data);
-        setLastUpdated(new Date());
+      let coinsRes = await fetch(`${base}/api/market/enriched-screener?limit=60`).catch(() => null);
+      if (!coinsRes || !coinsRes.ok) {
+        // Fallback to relative Next.js route
+        coinsRes = await fetch(`/api/market/enriched-screener?limit=60`).catch(() => null);
       }
-      if (trendRes.ok) {
-        setTrending(await trendRes.json());
+
+      let trendRes = await fetch(`${base}/api/market/coingecko/trending`).catch(() => null);
+      if (!trendRes || !trendRes.ok) {
+        trendRes = await fetch(`/api/market/coingecko/trending`).catch(() => null);
+      }
+
+      if (coinsRes && coinsRes.ok) {
+        const data = await coinsRes.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setCoins(data);
+          setLastUpdated(new Date());
+        }
+      }
+      if (trendRes && trendRes.ok) {
+        const trendData = await trendRes.json();
+        if (Array.isArray(trendData) && trendData.length > 0) {
+          setTrending(trendData);
+        }
       }
     } catch (e) {
       console.error("Veri çekme hatası:", e);

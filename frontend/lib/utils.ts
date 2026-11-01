@@ -214,8 +214,17 @@ export function formatVolume(volume: number): string {
 // WebSocket manager
 // ──────────────────────────────────────────────
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-export const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+export const API_URL =
+  typeof window !== "undefined" &&
+  (window.location.protocol === "https:" || !window.location.hostname.includes("localhost"))
+    ? (process.env.NEXT_PUBLIC_API_URL || "")
+    : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+
+export const WS_BASE_URL =
+  typeof window !== "undefined" &&
+  (window.location.protocol === "https:" || !window.location.hostname.includes("localhost"))
+    ? (process.env.NEXT_PUBLIC_WS_URL || `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`)
+    : (process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000");
 
 export class WSManager {
   private ws: WebSocket | null = null;
