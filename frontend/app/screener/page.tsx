@@ -72,35 +72,32 @@ export default function ScreenerPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const isRemote =
-        typeof window !== "undefined" &&
-        (window.location.protocol === "https:" || !window.location.hostname.includes("localhost"));
-      const base = isRemote ? "" : (API_URL || "");
-
-      let coinsRes = await fetch(`${base}/api/market/enriched-screener?limit=60`).catch(() => null);
-      if (!coinsRes || !coinsRes.ok) {
-        // Fallback to relative Next.js route
-        coinsRes = await fetch(`/api/market/enriched-screener?limit=60`).catch(() => null);
-      }
-
-      let trendRes = await fetch(`${base}/api/market/coingecko/trending`).catch(() => null);
-      if (!trendRes || !trendRes.ok) {
-        trendRes = await fetch(`/api/market/coingecko/trending`).catch(() => null);
-      }
-
-      if (coinsRes && coinsRes.ok) {
-        const data = await coinsRes.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setCoins(data);
-          setLastUpdated(new Date());
+      // Önce Render backend (gerçek Binance TA), başarısız/boş ise Next.js rotaları
+      const getJson = async (path: string): Promise<any[] | null> => {
+        const bases = API_URL ? [API_URL, ""] : [""];
+        for (const b of bases) {
+          try {
+            const r = await fetch(`${b}${path}`);
+            if (!r.ok) continue;
+            const d = await r.json();
+            if (Array.isArray(d) && d.length > 0) return d;
+          } catch {
+            // sıradaki kaynağa geç
+          }
         }
+        return null;
+      };
+
+      const [coinsData, trendData] = await Promise.all([
+        getJson("/api/market/enriched-screener?limit=60"),
+        getJson("/api/market/coingecko/trending"),
+      ]);
+
+      if (coinsData) {
+        setCoins(coinsData);
+        setLastUpdated(new Date());
       }
-      if (trendRes && trendRes.ok) {
-        const trendData = await trendRes.json();
-        if (Array.isArray(trendData) && trendData.length > 0) {
-          setTrending(trendData);
-        }
-      }
+      if (trendData) setTrending(trendData);
     } catch (e) {
       console.error("Veri çekme hatası:", e);
     } finally {
