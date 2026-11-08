@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Loader2, Layers, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Loader2, Layers, ShieldAlert, ShieldCheck, TrendingUp, TrendingDown, Scale } from "lucide-react";
+import { analyzeOrderBookImpact } from "@/lib/orderBookImpact";
+import { formatVolume } from "@/lib/utils";
 
 interface OrderBookProps {
   symbol: string;
@@ -170,6 +172,9 @@ export default function OrderBook({ symbol, exchange = "binance" }: OrderBookPro
     };
   }, [bids, asks]);
 
+  // ⚖️ Emir Defteri Fiyat Etkisi (Price Impact) Analizi
+  const impact = useMemo(() => analyzeOrderBookImpact(bids, asks), [bids, asks]);
+
   return (
     <div className="flex flex-col h-full bg-[#0d0e12]/80 border border-white/5 rounded-xl p-3 text-xs font-mono backdrop-blur select-none">
       {/* Header */}
@@ -192,6 +197,46 @@ export default function OrderBook({ symbol, exchange = "binance" }: OrderBookPro
         <div className="bg-emerald-500 h-full transition-all duration-300" style={{ width: `${buyRatio}%` }} />
         <div className="bg-rose-500 h-full transition-all duration-300" style={{ width: `${100 - buyRatio}%` }} />
       </div>
+
+      {/* ⚖️ Fiyat Etkisi Simülasyonu (Price Impact Strip) */}
+      {impact && (
+        <div
+          className="mb-2 px-2 py-1.5 rounded-lg bg-white/[0.025] border border-white/5 flex flex-wrap items-center justify-between gap-1.5 text-[10px] font-sans"
+          title={impact.summaryText}
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-400">
+              ${formatVolume(impact.sampleOrderUsd)} Etki:
+            </span>
+            <span className="font-mono text-emerald-400 font-bold">
+              Alım +%{impact.buyImpactPct.toFixed(2)}
+            </span>
+            <span className="text-gray-600">/</span>
+            <span className="font-mono text-rose-400 font-bold">
+              Satış -%{impact.sellImpactPct.toFixed(2)}
+            </span>
+          </div>
+
+          <span
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[9px] border ${
+              impact.direction === "BULLISH"
+                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                : impact.direction === "BEARISH"
+                ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+            }`}
+          >
+            {impact.direction === "BULLISH" ? (
+              <TrendingUp size={10} />
+            ) : impact.direction === "BEARISH" ? (
+              <TrendingDown size={10} />
+            ) : (
+              <Scale size={10} />
+            )}
+            {impact.shortBadge}
+          </span>
+        </div>
+      )}
 
       {/* 🐋 Balina Duvarları Özet HUD */}
       {(topBidWall || topAskWall) && (

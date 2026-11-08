@@ -12,9 +12,11 @@ import {
   CandlestickSeries,
   HistogramSeries,
   LineSeries,
+  LineStyle,
   type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
+  type IPriceLine,
   type CandlestickData,
   type HistogramData,
   type Time,
@@ -29,7 +31,8 @@ import {
   calculateSignalMarkers,
   type ChartSignalMarker,
 } from "@/lib/indicators";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, formatVolume } from "@/lib/utils";
+import { analyzeOrderBookImpact, type PriceImpactAnalysis } from "@/lib/orderBookImpact";
 
 type MarkersPluginApi = ISeriesMarkersPluginApi<Time>;
 
@@ -54,6 +57,11 @@ export default function CandlestickChart() {
   const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
 
+  // Emir Defteri Fiyat Etkisi (Destek & Direnç Duvarı) Fiyat Çizgileri
+  const bidWallLineRef = useRef<IPriceLine | null>(null);
+  const askWallLineRef = useRef<IPriceLine | null>(null);
+  const [bookImpact, setBookImpact] = useState<PriceImpactAnalysis | null>(null);
+
   const lastCandleCountRef = useRef<number>(0);
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   const activeInterval = useDashboardStore((s) => s.activeInterval);
@@ -68,6 +76,7 @@ export default function CandlestickChart() {
     bb: true,
     vwap: true,
     signals: true,
+    obImpact: true,
     rsi: false,
     macd: false,
   });
@@ -463,6 +472,120 @@ export default function CandlestickChart() {
     }
   }, [candles, signalData, toggles.signals]);
 
+  // Canlı Emir Defteri Fiyat Etkisi (L2 Depth20) Bağlantısı
+  useEffect(() => {
+    setBookImpact(null);
+    const hosts = [
+      "wss://data-stream.binance.vision:9443/ws",
+      "wss://stream.binance.com:9443/ws",
+    ];
+    const cleanSym = activeSymbol.toLowerCase();
+    let hostIndex = 0;
+    let disposed = false;
+    let gotData = false;
+    let ws: WebSocket | null = null;
+    let retryTimer: NodeJS.Timeout | null = null;
+    let lastEmit = 0;
+
+    const connect = () => {
+      if (disposed) return;
+      gotData = false;
+      try {
+        const socket = new WebSocket(`${hosts[hostIndex]}/${cleanSym}@depth20@100ms`);
+        ws = socket;
+
+        socket.onmessage = (event) => {
+          if (disposed) return;
+          const now = Date.now();
+          if (now - lastEmit < 600) return; // Grafik performansını korumak için 600ms throttle
+          try {
+            const data = JSON.parse(event.data);
+            if (Array.isArray(data.bids) && Array.isArray(data.asks) && data.bids.length > 0) {
+              gotData = true;
+              lastEmit = now;
+              const analysis = analyzeOrderBookImpact(data.bids, data.asks);
+              if (analysis) setBookImpact(analysis);
+            }
+          } catch {
+            // ignore malformed frame
+          }
+        };
+
+        const failOver = () => {
+          if (disposed) return;
+          socket.onclose = null;
+          socket.onerror = null;
+          if (!gotData) hostIndex = (hostIndex + 1) % hosts.length;
+          retryTimer = setTimeout(connect, gotData ? 1500 : 2000);
+        };
+        socket.onerror = failOver;
+        socket.onclose = failOver;
+      } catch {
+        retryTimer = setTimeout(connect, 2500);
+      }
+    };
+
+    connect();
+
+    return () => {
+      disposed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      if (ws) {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+      }
+    };
+  }, [activeSymbol]);
+
+  // Emir Defteri Destek / Direnç Duvarlarını Mum Grafiğine Fiyat Çizgisi Olarak Çiz
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+
+    if (bidWallLineRef.current) {
+      try {
+        series.removePriceLine(bidWallLineRef.current);
+      } catch {
+        // ignore if already removed
+      }
+      bidWallLineRef.current = null;
+    }
+
+    if (askWallLineRef.current) {
+      try {
+        series.removePriceLine(askWallLineRef.current);
+      } catch {
+        // ignore if already removed
+      }
+      askWallLineRef.current = null;
+    }
+
+    if (!toggles.obImpact || !bookImpact || candles.length === 0) return;
+
+    if (bookImpact.topBidWall) {
+      bidWallLineRef.current = series.createPriceLine({
+        price: bookImpact.topBidWall.price,
+        color: "rgba(16, 185, 129, 0.85)",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `🛡️ Alış Duvarı $${formatVolume(bookImpact.topBidWall.usd)}`,
+      });
+    }
+
+    if (bookImpact.topAskWall) {
+      askWallLineRef.current = series.createPriceLine({
+        price: bookImpact.topAskWall.price,
+        color: "rgba(239, 68, 68, 0.85)",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `🧱 Satış Duvarı $${formatVolume(bookImpact.topAskWall.usd)}`,
+      });
+    }
+  }, [bookImpact, toggles.obImpact, candles.length]);
+
   const ind = signalData?.indicators;
 
   return (
@@ -516,10 +639,30 @@ export default function CandlestickChart() {
               <span className="text-white/80 tabular-nums">{formatNumber(ind.vwap)}</span>
             </div>
           )}
+
+          {toggles.obImpact && bookImpact && (
+            <div
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] ${
+                bookImpact.direction === "BULLISH"
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                  : bookImpact.direction === "BEARISH"
+                  ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                  : "bg-amber-500/10 border-amber-500/30 text-amber-300"
+              }`}
+              title={bookImpact.summaryText}
+            >
+              <span className="font-sans font-bold">⚖️ {bookImpact.shortBadge}</span>
+              <span className="text-white/75 tabular-nums">
+                (${formatVolume(bookImpact.sampleOrderUsd)} →{" "}
+                <strong className="text-emerald-400">+%{bookImpact.buyImpactPct.toFixed(2)}</strong> /{" "}
+                <strong className="text-rose-400">-%{bookImpact.sellImpactPct.toFixed(2)}</strong>)
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Right: Interactive Indicator Layer Toggles */}
-        <div className="flex items-center gap-1.5 bg-black/50 p-1 rounded-xl border border-white/10">
+        <div className="flex flex-wrap items-center gap-1.5 bg-black/50 p-1 rounded-xl border border-white/10">
           <button
             onClick={() => setToggles((t) => ({ ...t, ema: !t.ema }))}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-medium transition-all cursor-pointer ${
@@ -570,6 +713,19 @@ export default function CandlestickChart() {
           >
             <span className={`w-1.5 h-1.5 rounded-full ${toggles.signals ? "bg-emerald-400" : "bg-gray-600"}`} />
             Sinyaller
+          </button>
+
+          <button
+            onClick={() => setToggles((t) => ({ ...t, obImpact: !t.obImpact }))}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-medium transition-all cursor-pointer ${
+              toggles.obImpact
+                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.25)]"
+                : "text-gray-400 hover:text-gray-200 border border-transparent"
+            }`}
+            title="Emir Defteri Fiyat Etkisi & Destek/Direnç Duvarları"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${toggles.obImpact ? "bg-amber-400" : "bg-gray-600"}`} />
+            Derinlik Etki
           </button>
 
           <button
