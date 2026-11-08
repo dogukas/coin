@@ -35,6 +35,7 @@ import {
 
 import GlobalMarketPanel from "@/components/dashboard/GlobalMarketPanel";
 import AiCopilot from "@/components/dashboard/AiCopilot";
+import ChartErrorBoundary from "@/components/charts/ChartErrorBoundary";
 
 // Dynamic import for chart (no SSR — requires browser APIs)
 const CandlestickChart = dynamic(
@@ -435,9 +436,13 @@ export default function DashboardPage() {
               </div>
               <div className="w-full h-[400px] lg:h-[500px]">
                 {chartTab === "price" ? (
-                  <CandlestickChart />
+                  <ChartErrorBoundary>
+                    <CandlestickChart />
+                  </ChartErrorBoundary>
                 ) : chartTab === "depth" ? (
-                  <DepthChart />
+                  <ChartErrorBoundary>
+                    <DepthChart />
+                  </ChartErrorBoundary>
                 ) : chartTab === "orderbook" ? (
                   <OrderBook symbol={activeSymbol} exchange="binance" />
                 ) : (

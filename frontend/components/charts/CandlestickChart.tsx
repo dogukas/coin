@@ -129,7 +129,7 @@ export default function CandlestickChart() {
     });
 
     chart.priceScale("volume_scale").applyOptions({
-      scaleMargins: { top: 0.72, bottom: 0.32 },
+      scaleMargins: { top: 0.70, bottom: 0.22 },
       visible: false,
     });
 
@@ -144,7 +144,7 @@ export default function CandlestickChart() {
     });
 
     chart.priceScale("rsi_scale").applyOptions({
-      scaleMargins: { top: 0.75, bottom: 0.12 },
+      scaleMargins: { top: 0.78, bottom: 0.12 },
       visible: false,
     });
 
