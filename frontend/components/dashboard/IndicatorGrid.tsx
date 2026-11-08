@@ -1,7 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
 import { useDashboardStore } from "@/lib/store";
 import { formatPrice } from "@/lib/utils";
+import { calculateEMA, calculateMACD } from "@/lib/indicators";
 import {
   Activity,
   BarChart3,
@@ -14,8 +16,51 @@ import {
 
 export default function IndicatorGrid() {
   const signalData = useDashboardStore((s) => s.signalData);
+  const candles = useDashboardStore((s) => s.candles);
   const ind = signalData?.indicators;
   const currentPrice = signalData?.price ?? null;
+
+  // Real MACD histogram bars (last 20 candles) and real EMA20/EMA50 SVG points
+  const { macdHistBars, emaSvg } = useMemo(() => {
+    if (!candles || candles.length < 35) {
+      return { macdHistBars: [] as number[], emaSvg: null };
+    }
+    const macdRes = calculateMACD(candles, 12, 26, 9);
+    const bars = macdRes.histogram.slice(-20).map((p) => p.value);
+
+    const e20 = calculateEMA(candles, 20).slice(-20).map((p) => p.value);
+    const e50 = calculateEMA(candles, 50).slice(-20).map((p) => p.value);
+
+    if (e20.length < 2 || e50.length < 2) {
+      return { macdHistBars: bars, emaSvg: null };
+    }
+    const len = Math.min(e20.length, e50.length);
+    const s20 = e20.slice(-len);
+    const s50 = e50.slice(-len);
+    const all = [...s20, ...s50];
+    const min = Math.min(...all);
+    const max = Math.max(...all);
+    const span = max - min || 1;
+
+    const toPts = (arr: number[]) =>
+      arr
+        .map((v, idx) => {
+          const x = (idx / (len - 1)) * 156 + 2;
+          const y = 38 - ((v - min) / span) * 30;
+          return `${x.toFixed(1)},${y.toFixed(1)}`;
+        })
+        .join(" ");
+
+    const lastY20 = 38 - ((s20[s20.length - 1] - min) / span) * 30;
+    return {
+      macdHistBars: bars,
+      emaSvg: {
+        pts20: toPts(s20),
+        pts50: toPts(s50),
+        lastY20: Number(lastY20.toFixed(1)),
+      },
+    };
+  }, [candles]);
 
   // VWAP price difference calculation
   let vwapDiffPct: number | null = null;
@@ -145,19 +190,26 @@ export default function IndicatorGrid() {
         <div>
           <svg viewBox="0 0 160 44" className="w-full h-auto block" role="img" aria-label="MACD">
             <line x1="0" x2="160" y1="22" y2="22" stroke="var(--line)" strokeWidth="1" />
-            {/* Fake histogram bars representing MACD trend for aesthetic purposes */}
-            {Array.from({ length: 20 }).map((_, i) => {
-              const v = Math.sin(i / 3) * (ind?.macd_histogram ? (ind.macd_histogram > 0 ? 1 : -1) : 1);
-              const isUp = v >= 0;
-              const h = Math.max(1.5, Math.abs(v) * 15);
-              const w = 160 / 20;
-              return (
-                <rect 
-                  key={i} x={i * w + 1} y={isUp ? 22 - h : 23} width={w - 3} height={h} rx={1.5} 
-                  fill={isUp ? "var(--gain)" : "var(--loss)"} opacity={i === 19 ? 1 : 0.55} 
-                />
-              );
-            })}
+            {macdHistBars.length > 0 && (() => {
+              const maxAbs = Math.max(...macdHistBars.map((v) => Math.abs(v)), 0.0001);
+              const w = 160 / macdHistBars.length;
+              return macdHistBars.map((v, i) => {
+                const isUp = v >= 0;
+                const h = Math.max(1.5, (Math.abs(v) / maxAbs) * 18);
+                return (
+                  <rect
+                    key={i}
+                    x={i * w + 1}
+                    y={isUp ? 22 - h : 23}
+                    width={Math.max(2, w - 3)}
+                    height={h}
+                    rx={1.5}
+                    fill={isUp ? "var(--gain)" : "var(--loss)"}
+                    opacity={i === macdHistBars.length - 1 ? 1 : 0.6}
+                  />
+                );
+              });
+            })()}
           </svg>
         </div>
         <p className={sClass}>
@@ -182,12 +234,18 @@ export default function IndicatorGrid() {
         </div>
         <div>
           <svg viewBox="0 0 160 44" className="w-full h-auto block" role="img" aria-label="EMA Trend">
-            <polyline points="0,14 25,15 50,17 75,20 100,24 125,27 160,30" fill="none" stroke="#a98791" strokeWidth="1.6" strokeDasharray="4 3" strokeLinecap="round"/>
-            <polyline points="0,8 25,11 50,16 75,24 100,30 125,34 160,38" fill="none" stroke={ind?.ema_trend === "bullish_cross" ? "var(--gain)" : "var(--loss)"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-            <circle cx="160" cy="38" r="3" fill={ind?.ema_trend === "bullish_cross" ? "var(--gain)" : "var(--loss)"}/>
+            {emaSvg ? (
+              <>
+                <polyline points={emaSvg.pts50} fill="none" stroke="#a98791" strokeWidth="1.6" strokeDasharray="4 3" strokeLinecap="round" />
+                <polyline points={emaSvg.pts20} fill="none" stroke={emaDiff >= 0 ? "var(--gain)" : "var(--loss)"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="158" cy={emaSvg.lastY20} r="3" fill={emaDiff >= 0 ? "var(--gain)" : "var(--loss)"} />
+              </>
+            ) : (
+              <line x1="0" x2="160" y1="22" y2="22" stroke="var(--line)" strokeWidth="1" strokeDasharray="4 3" />
+            )}
           </svg>
           <div className="flex gap-3 font-mono text-[10px] text-[var(--ink-dim)] mt-1.5">
-            <span className="flex items-center gap-1.5"><i className={`w-3 h-0.5 inline-block ${ind?.ema_trend === "bullish_cross" ? "bg-[var(--gain)]" : "bg-[var(--loss)]"}`} />EMA20</span>
+            <span className="flex items-center gap-1.5"><i className={`w-3 h-0.5 inline-block ${emaDiff >= 0 ? "bg-[var(--gain)]" : "bg-[var(--loss)]"}`} />EMA20</span>
             <span className="flex items-center gap-1.5"><i className="w-3 h-0.5 inline-block bg-[#a98791]" />EMA50</span>
           </div>
         </div>

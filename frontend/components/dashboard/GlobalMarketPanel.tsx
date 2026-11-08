@@ -33,32 +33,55 @@ export default function GlobalMarketPanel() {
   const [trendingCoins, setTrendingCoins] = useState<TrendingCoin[]>([]);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/market/fear-greed`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data) {
-          setFearGreed({
-            value: data.value || 50,
-            classification: data.classification || "Nötr",
-          });
-          if (data.global_volume_24h) {
-            setGlobalVolume(data.global_volume_24h);
+    let active = true;
+    const loadFearGreed = async () => {
+      const urls = ["/api/market/fear-greed", ...(API_URL ? [`${API_URL}/api/market/fear-greed`] : [])];
+      for (const u of urls) {
+        try {
+          const res = await fetch(u);
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (active && data) {
+            setFearGreed({
+              value: data.value || 50,
+              classification: data.classification || "Nötr",
+            });
+            if (data.global_volume_24h) {
+              setGlobalVolume(data.global_volume_24h);
+            }
+            if (data.global_volume_24h > 0) break;
           }
+        } catch {
+          // try next
         }
-      })
-      .catch(() => {});
+      }
+    };
+    loadFearGreed();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const fetchPressure = useCallback(async () => {
     setPressureLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/market/buy-sell-pressure/${activeSymbol}?limit=32`);
-      if (res.ok) {
-        const data: PressureBar[] = await res.json();
-        setPressureData(data);
+      const urls = [
+        `/api/market/buy-sell-pressure/${activeSymbol}?limit=32`,
+        ...(API_URL ? [`${API_URL}/api/market/buy-sell-pressure/${activeSymbol}?limit=32`] : []),
+      ];
+      for (const u of urls) {
+        try {
+          const res = await fetch(u);
+          if (!res.ok) continue;
+          const data: PressureBar[] = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setPressureData(data);
+            break;
+          }
+        } catch {
+          // try next
+        }
       }
-    } catch {
-      // ignore
     } finally {
       setPressureLoading(false);
     }
@@ -71,20 +94,33 @@ export default function GlobalMarketPanel() {
   }, [fetchPressure]);
 
   useEffect(() => {
-    const fetchTrending = () => {
-      fetch(`${API_URL}/api/market/overview?limit=5`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data && data.gainers) {
+    let active = true;
+    const fetchTrending = async () => {
+      const urls = [
+        "/api/market/overview?limit=5",
+        ...(API_URL ? [`${API_URL}/api/market/overview?limit=5`] : []),
+      ];
+      for (const u of urls) {
+        try {
+          const res = await fetch(u);
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (active && data && Array.isArray(data.gainers) && data.gainers.length > 0) {
             setTrendingCoins(data.gainers.slice(0, 4));
+            break;
           }
-        })
-        .catch(() => {});
+        } catch {
+          // try next
+        }
+      }
     };
-    
+
     fetchTrending();
     const interval = setInterval(fetchTrending, 60000);
-    return () => clearInterval(interval);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const totalBuy = pressureData.reduce((acc, curr) => acc + curr.buy_volume, 0);

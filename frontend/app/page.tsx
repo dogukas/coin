@@ -7,7 +7,8 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import dynamic from "next/dynamic";
 import { useDashboardStore } from "@/lib/store";
 import { WSManager } from "@/lib/utils";
-import type { WSMessage } from "@/lib/utils";
+import type { WSMessage, CandleData } from "@/lib/utils";
+import { buildSignalPayloadFromCandles } from "@/lib/indicators";
 import SignalCard from "@/components/dashboard/SignalCard";
 import IndicatorGrid from "@/components/dashboard/IndicatorGrid";
 import CoinBrowser from "@/components/dashboard/CoinBrowser";
@@ -86,6 +87,7 @@ export default function DashboardPage() {
   const [chartTab, setChartTab] = useState<"price" | "depth" | "orderbook" | "radar">("price");
   const [asideTab, setAsideTab] = useState<"trade" | "flow" | "ai">("trade");
   const [flowSubTab, setFlowSubTab] = useState<"trades" | "whales" | "liquidations">("trades");
+  const [directWsConnected, setDirectWsConnected] = useState(false);
 
   const wsManagerRef = useRef<WSManager | null>(null);
 
@@ -191,34 +193,110 @@ export default function DashboardPage() {
     };
   }, [activeSymbol, activeInterval, handleMessage, handleStatusChange]);
 
-  // Yedek: backend WS 4 sn içinde bağlanmazsa canlı emirleri doğrudan Binance'ten al
+  // Yedek: backend WS bağlı değilse doğrudan Binance REST + WS üzerinden canlı mum, indikatör, sinyal ve emir akışı al
   useEffect(() => {
     if (wsConnected) return;
 
     let ws: WebSocket | null = null;
     let closed = false;
+    let localCandles: CandleData[] = [];
+    let lastSignalCalcMs = 0;
+
+    const loadInitialKlines = async () => {
+      const endpoints = [
+        "https://data-api.binance.vision/api/v3/klines",
+        "https://api.binance.com/api/v3/klines",
+      ];
+      for (const base of endpoints) {
+        try {
+          const res = await fetch(
+            `${base}?symbol=${activeSymbol}&interval=${activeInterval}&limit=220`
+          );
+          if (!res.ok) continue;
+          const raw = (await res.json()) as unknown[][];
+          if (!Array.isArray(raw) || raw.length === 0 || closed) continue;
+
+          localCandles = raw.map((k) => ({
+            time: Math.floor(Number(k[0]) / 1000),
+            open: parseFloat(String(k[1])),
+            high: parseFloat(String(k[2])),
+            low: parseFloat(String(k[3])),
+            close: parseFloat(String(k[4])),
+            volume: parseFloat(String(k[5])),
+            taker_buy_volume: parseFloat(String(k[9])),
+          }));
+
+          setCandles(localCandles);
+          const sig = buildSignalPayloadFromCandles(activeSymbol, localCandles);
+          if (sig) updateSignal(sig);
+          lastSignalCalcMs = Date.now();
+          break;
+        } catch {
+          // try next endpoint
+        }
+      }
+    };
+
     const hosts = [
-      "wss://data-stream.binance.vision/ws",
-      "wss://stream.binance.com:9443/ws",
+      "wss://data-stream.binance.vision/stream",
+      "wss://stream.binance.com:9443/stream",
     ];
     let hostIdx = 0;
 
     const open = () => {
       if (closed) return;
-      ws = new WebSocket(`${hosts[hostIdx]}/${activeSymbol.toLowerCase()}@aggTrade`);
+      const symLower = activeSymbol.toLowerCase();
+      const streamUrl = `${hosts[hostIdx]}?streams=${symLower}@aggTrade/${symLower}@kline_${activeInterval}`;
+      ws = new WebSocket(streamUrl);
+      ws.onopen = () => {
+        if (!closed) setDirectWsConnected(true);
+      };
       ws.onmessage = (e) => {
+        if (closed) return;
         try {
-          const d = JSON.parse(e.data);
-          if (!d || d.p === undefined) return;
-          handleMessage({
-            type: "trade_update",
-            trade: {
-              price: parseFloat(d.p),
-              quantity: parseFloat(d.q),
-              time: Number(d.T),
-              is_buyer_maker: Boolean(d.m),
-            },
-          } as WSMessage);
+          const msg = JSON.parse(e.data);
+          const d = msg?.data ?? msg;
+          if (!d) return;
+
+          if (d.e === "aggTrade" && d.p !== undefined) {
+            handleMessage({
+              type: "trade_update",
+              trade: {
+                price: parseFloat(d.p),
+                quantity: parseFloat(d.q),
+                time: Number(d.T),
+                is_buyer_maker: Boolean(d.m),
+              },
+            } as WSMessage);
+          } else if (d.e === "kline" && d.k) {
+            const k = d.k;
+            const candle: CandleData = {
+              time: Math.floor(Number(k.t) / 1000),
+              open: parseFloat(k.o),
+              high: parseFloat(k.h),
+              low: parseFloat(k.l),
+              close: parseFloat(k.c),
+              volume: parseFloat(k.v),
+              taker_buy_volume: parseFloat(k.V),
+            };
+            updateCandle(candle);
+
+            if (localCandles.length > 0) {
+              const lastIdx = localCandles.length - 1;
+              if (localCandles[lastIdx].time === candle.time) {
+                localCandles[lastIdx] = candle;
+              } else if (candle.time > localCandles[lastIdx].time) {
+                localCandles.push(candle);
+                if (localCandles.length > 250) localCandles.shift();
+              }
+              const now = Date.now();
+              if (now - lastSignalCalcMs >= 2000) {
+                const sig = buildSignalPayloadFromCandles(activeSymbol, localCandles);
+                if (sig) updateSignal(sig);
+                lastSignalCalcMs = now;
+              }
+            }
+          }
         } catch {
           // yoksay
         }
@@ -227,20 +305,28 @@ export default function DashboardPage() {
         hostIdx = (hostIdx + 1) % hosts.length;
       };
       ws.onclose = () => {
-        if (!closed) setTimeout(open, 2000);
+        if (!closed) {
+          setDirectWsConnected(false);
+          setTimeout(open, 2000);
+        }
       };
     };
 
-    const timer = setTimeout(open, 4000);
+    const timer = setTimeout(() => {
+      loadInitialKlines();
+      open();
+    }, 1500);
+
     return () => {
       closed = true;
+      setDirectWsConnected(false);
       clearTimeout(timer);
       if (ws) {
         ws.onclose = null;
         ws.close();
       }
     };
-  }, [wsConnected, activeSymbol, handleMessage]);
+  }, [wsConnected, activeSymbol, activeInterval, handleMessage, setCandles, updateCandle, updateSignal]);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#020205] text-white selection:bg-emerald-500/30">
@@ -316,7 +402,7 @@ export default function DashboardPage() {
 
           {/* Connection status */}
           <div className="flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-white/[0.03] border border-white/5">
-            {wsConnected ? (
+            {wsConnected || directWsConnected ? (
               <>
                 <div className="relative">
                   <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-emerald-500" />

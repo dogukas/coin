@@ -1,7 +1,7 @@
 // Pure TypeScript technical indicator calculators for chart overlays
 // Synchronized with Binance kline timestamps for lightweight-charts
 
-import type { CandleData } from "./utils";
+import type { CandleData, IndicatorData, SignalPayload } from "./utils";
 import type { Time } from "lightweight-charts";
 
 export interface LinePoint {
@@ -279,4 +279,175 @@ export function calculateSignalMarkers(candles: CandleData[]): ChartSignalMarker
   }
 
   return markers;
+}
+
+/**
+ * Builds a complete, real SignalPayload and IndicatorData directly from live Binance klines.
+ * Used when the external Python WebSocket backend is asleep or unreachable.
+ */
+export function buildSignalPayloadFromCandles(
+  symbol: string,
+  candles: CandleData[]
+): SignalPayload | null {
+  if (!candles || candles.length < 30) return null;
+
+  const latest = candles[candles.length - 1];
+  const price = latest.close;
+
+  const rsiPts = calculateRSI(candles, 14);
+  const macdRes = calculateMACD(candles, 12, 26, 9);
+  const ema20Pts = calculateEMA(candles, 20);
+  const ema50Pts = calculateEMA(candles, 50);
+  const ema200Pts = calculateEMA(candles, 200);
+  const bbRes = calculateBollingerBands(candles, 20, 2);
+  const vwapPts = calculateVWAP(candles.slice(-48));
+
+  const rsi = rsiPts.length > 0 ? rsiPts[rsiPts.length - 1].value : null;
+  const macdLine = macdRes.macdLine.length > 0 ? macdRes.macdLine[macdRes.macdLine.length - 1].value : null;
+  const macdSignal = macdRes.signalLine.length > 0 ? macdRes.signalLine[macdRes.signalLine.length - 1].value : null;
+  const macdHist = macdRes.histogram.length > 0 ? macdRes.histogram[macdRes.histogram.length - 1].value : null;
+  const macdTrend: "bullish" | "bearish" | null =
+    macdLine !== null && macdSignal !== null
+      ? macdLine >= macdSignal
+        ? "bullish"
+        : "bearish"
+      : null;
+
+  const ema20 = ema20Pts.length > 0 ? ema20Pts[ema20Pts.length - 1].value : null;
+  const ema50 = ema50Pts.length > 0 ? ema50Pts[ema50Pts.length - 1].value : null;
+  const ema200 = ema200Pts.length > 0 ? ema200Pts[ema200Pts.length - 1].value : null;
+
+  let emaTrend: "bullish_cross" | "bearish_cross" | "neutral" | null = "neutral";
+  if (ema20 !== null && ema50 !== null) {
+    if (ema20 > ema50 && price > ema20) emaTrend = "bullish_cross";
+    else if (ema20 < ema50 && price < ema20) emaTrend = "bearish_cross";
+  }
+
+  const bbUpper = bbRes.upper.length > 0 ? bbRes.upper[bbRes.upper.length - 1].value : null;
+  const bbMiddle = bbRes.middle.length > 0 ? bbRes.middle[bbRes.middle.length - 1].value : null;
+  const bbLower = bbRes.lower.length > 0 ? bbRes.lower[bbRes.lower.length - 1].value : null;
+  const vwap = vwapPts.length > 0 ? vwapPts[vwapPts.length - 1].value : null;
+
+  const volSlice = candles.slice(-20);
+  const volumeMa =
+    volSlice.length > 0
+      ? volSlice.reduce((s, c) => s + c.volume, 0) / volSlice.length
+      : null;
+  const currentVolume = latest.volume;
+
+  // Real Taker Buy Pressure over recent 12 candles
+  const recent12 = candles.slice(-12);
+  let totalVol12 = 0;
+  let takerBuy12 = 0;
+  for (const c of recent12) {
+    totalVol12 += c.volume;
+    if (c.taker_buy_volume !== undefined) {
+      takerBuy12 += c.taker_buy_volume;
+    } else {
+      takerBuy12 += c.close >= c.open ? c.volume * 0.56 : c.volume * 0.44;
+    }
+  }
+  const buyPressurePct =
+    totalVol12 > 0 ? Number(((takerBuy12 / totalVol12) * 100).toFixed(1)) : 50;
+
+  // Scoring & Reasons (0 - 100)
+  let score = 50;
+  const reasons: string[] = [];
+
+  if (rsi !== null) {
+    if (rsi < 32) {
+      score += 16;
+      reasons.push(`✓ RSI (${rsi.toFixed(1)}) aşırı satım bölgesinde — tepki alımı fırsatı`);
+    } else if (rsi >= 45 && rsi <= 65) {
+      score += 10;
+      reasons.push(`✓ RSI (${rsi.toFixed(1)}) sağlıklı momentum bölgesinde`);
+    } else if (rsi > 72) {
+      score -= 14;
+      reasons.push(`✗ RSI (${rsi.toFixed(1)}) aşırı alım bölgesinde — kar satışı riski`);
+    } else {
+      score -= 4;
+      reasons.push(`✗ RSI (${rsi.toFixed(1)}) zayıf momentum gösteriyor`);
+    }
+  }
+
+  if (macdTrend === "bullish") {
+    score += 14;
+    reasons.push("✓ MACD sinyal çizgisinin üzerinde — pozitif momentum");
+  } else if (macdTrend === "bearish") {
+    score -= 12;
+    reasons.push("✗ MACD sinyal çizgisinin altında — negatif momentum");
+  }
+
+  if (ema20 !== null && ema50 !== null) {
+    if (ema20 > ema50 && price >= ema20) {
+      score += 14;
+      reasons.push("✓ Fiyat EMA20 ve EMA50 üzerinde — yükseliş trendi aktif");
+    } else if (ema20 < ema50 && price < ema20) {
+      score -= 14;
+      reasons.push("✗ Fiyat EMA20 ve EMA50 altında — düşüş baskısı sürüyor");
+    } else {
+      reasons.push(
+        price >= ema20
+          ? "✓ Fiyat kısa vadeli EMA20 ortalamasının üzerinde"
+          : "✗ Fiyat kısa vadeli EMA20 ortalamasının altında"
+      );
+    }
+  }
+
+  if (vwap !== null) {
+    if (price >= vwap) {
+      score += 8;
+      reasons.push("✓ Fiyat hacim ağırlıklı ortalama VWAP üzerinde");
+    } else {
+      score -= 8;
+      reasons.push("✗ Fiyat hacim ağırlıklı ortalama VWAP altında");
+    }
+  }
+
+  if (buyPressurePct >= 53) {
+    score += 8;
+    reasons.push(`✓ Son mumlarda agresif piyasa alıcıları baskın (%${buyPressurePct.toFixed(0)})`);
+  } else if (buyPressurePct <= 47) {
+    score -= 8;
+    reasons.push(`✗ Son mumlarda piyasa satıcıları baskın (%${(100 - buyPressurePct).toFixed(0)} satış)`);
+  }
+
+  score = Math.max(5, Math.min(98, Math.round(score)));
+  const label =
+    score >= 75
+      ? "GÜÇLÜ AL"
+      : score >= 58
+      ? "AL SİNYALİ"
+      : score >= 42
+      ? "BEKLE / NÖTR"
+      : "SAT / ZAYIF";
+
+  const indicators: IndicatorData = {
+    rsi,
+    macd_line: macdLine,
+    macd_signal: macdSignal,
+    macd_histogram: macdHist,
+    macd_trend: macdTrend,
+    ema_20: ema20,
+    ema_50: ema50,
+    ema_200: ema200,
+    ema_trend: emaTrend,
+    bb_upper: bbUpper,
+    bb_middle: bbMiddle,
+    bb_lower: bbLower,
+    vwap,
+    volume_ma: volumeMa !== null ? Number(volumeMa.toFixed(2)) : null,
+    current_volume: Number(currentVolume.toFixed(2)),
+    buy_pressure_pct: buyPressurePct,
+  };
+
+  return {
+    symbol,
+    price,
+    score,
+    label,
+    indicators,
+    reasons,
+    timestamp: Math.floor(Date.now() / 1000),
+  };
 }

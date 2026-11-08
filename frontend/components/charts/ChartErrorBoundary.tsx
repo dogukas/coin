@@ -39,3 +39,4 @@ export default class ChartErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
+

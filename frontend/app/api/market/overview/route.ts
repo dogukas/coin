@@ -1,81 +1,153 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 60; // 1 minute cache
+export const revalidate = 20; // 20s cache
 
-interface OverviewMarketCoin {
-  symbol?: string;
-  current_price?: number;
-  price_change_percentage_24h?: number;
-  total_volume?: number;
-  image?: string;
+interface Binance24hRow {
+  symbol: string;
+  lastPrice: string;
+  priceChangePercent: string;
+  quoteVolume: string;
+  highPrice: string;
+  lowPrice: string;
+  count: number;
 }
+
+const EXCLUDED_BASES = new Set([
+  "USDC",
+  "FDUSD",
+  "TUSD",
+  "USDP",
+  "DAI",
+  "BUSD",
+  "USDE",
+  "EUR",
+  "GBP",
+  "AEUR",
+  "USD1",
+  "RLUSD",
+  "PAXG",
+  "WBTC",
+]);
+
+const CATEGORY_MAP: Record<string, string> = {
+  BTC: "Layer 1",
+  ETH: "Layer 1",
+  SOL: "Layer 1",
+  BNB: "Exchange",
+  XRP: "Payment",
+  ADA: "Layer 1",
+  AVAX: "Layer 1",
+  SUI: "Layer 1",
+  NEAR: "AI & L1",
+  APT: "Layer 1",
+  SEI: "Layer 1",
+  TON: "Layer 1",
+  DOT: "Layer 0",
+  ATOM: "Layer 0",
+  ARB: "Layer 2",
+  OP: "Layer 2",
+  POL: "Layer 2",
+  LINK: "Oracle",
+  UNI: "DeFi",
+  AAVE: "DeFi",
+  ENA: "DeFi",
+  PENDLE: "DeFi",
+  ONDO: "RWA",
+  FET: "AI",
+  TAO: "AI",
+  RENDER: "AI",
+  WLD: "AI",
+  DOGE: "Meme",
+  SHIB: "Meme",
+  PEPE: "Meme",
+  WIF: "Meme",
+  BONK: "Meme",
+  FLOKI: "Meme",
+  TRUMP: "Meme",
+};
+
+const BINANCE_ENDPOINTS = [
+  "https://data-api.binance.vision/api/v3/ticker/24hr",
+  "https://api.binance.com/api/v3/ticker/24hr",
+];
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get("limit") || "30", 10);
+    const limit = Math.min(100, Math.max(5, parseInt(searchParams.get("limit") || "30", 10)));
 
-    let coins: OverviewMarketCoin[] = [];
-    try {
-      const res = await fetch(
-        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=60&page=1&sparkline=false`,
-        {
-          headers: {
-            Accept: "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          },
-          next: { revalidate: 60 },
+    let rows: Binance24hRow[] = [];
+    for (const url of BINANCE_ENDPOINTS) {
+      try {
+        const res = await fetch(url, { next: { revalidate: 20 } });
+        if (res.ok) {
+          const data = (await res.json()) as Binance24hRow[];
+          if (Array.isArray(data) && data.length > 0) {
+            rows = data;
+            break;
+          }
         }
-      );
-      if (res.ok) {
-        coins = (await res.json()) as OverviewMarketCoin[];
+      } catch {
+        // try next endpoint
       }
-    } catch (err) {
-      console.warn("Overview CG fetch error:", err);
     }
 
-    if (!Array.isArray(coins) || coins.length === 0) {
-      coins = FALLBACK_ITEMS;
-    }
+    const usdtCoins = rows
+      .filter((r) => {
+        if (!r.symbol.endsWith("USDT")) return false;
+        const base = r.symbol.slice(0, -4);
+        if (EXCLUDED_BASES.has(base)) return false;
+        if (base.endsWith("UP") || base.endsWith("DOWN") || base.endsWith("BULL") || base.endsWith("BEAR")) {
+          return false;
+        }
+        const price = parseFloat(r.lastPrice);
+        const qv = parseFloat(r.quoteVolume);
+        return Number.isFinite(price) && price > 0 && Number.isFinite(qv) && qv >= 1_000_000;
+      })
+      .map((r) => {
+        const base = r.symbol.slice(0, -4);
+        const price = parseFloat(r.lastPrice);
+        const change24h = parseFloat(r.priceChangePercent);
+        const volumeUsd = parseFloat(r.quoteVolume);
+        const high = parseFloat(r.highPrice);
+        const low = parseFloat(r.lowPrice);
+        // Position within 24h range as an indicator of intraday buying support
+        const range = high > low ? (price - low) / (high - low) : 0.5;
+        const buyPressurePct = Math.round(Math.min(88, Math.max(15, range * 100)));
 
-    const formatted = coins.map((c: OverviewMarketCoin) => {
-      const raw = (c.symbol || "").toUpperCase();
-      const symbol = raw.endsWith("USDT") ? raw : `${raw}USDT`;
-      return {
-        symbol,
-        price: Number(c.current_price) || 0,
-        change_24h: Number((c.price_change_percentage_24h || 0).toFixed(2)),
-        volume_usd: Number(c.total_volume) || 0,
-        logo: c.image || "",
-      };
-    });
+        return {
+          symbol: r.symbol,
+          price,
+          change_24h: Number(change24h.toFixed(2)),
+          volume_usd: Math.round(volumeUsd),
+          high_24h: high,
+          low_24h: low,
+          category: CATEGORY_MAP[base] || null,
+          buy_pressure_pct: buyPressurePct,
+          logo: "",
+        };
+      });
 
-    const gainers = [...formatted].sort((a, b) => b.change_24h - a.change_24h);
-    const losers = [...formatted].sort((a, b) => a.change_24h - b.change_24h);
-    const topVolume = [...formatted].sort((a, b) => b.volume_usd - a.volume_usd);
+    const popular = [...usdtCoins].sort((a, b) => b.volume_usd - a.volume_usd);
+    const gainers = [...usdtCoins].sort((a, b) => b.change_24h - a.change_24h);
+    const losers = [...usdtCoins].sort((a, b) => a.change_24h - b.change_24h);
 
     return NextResponse.json({
+      popular: popular.slice(0, limit),
       gainers: gainers.slice(0, limit),
       losers: losers.slice(0, limit),
-      top_volume: topVolume.slice(0, limit),
-      coins: formatted.slice(0, limit),
+      top_volume: popular.slice(0, limit),
+      coins: popular.slice(0, limit),
+      total_count: usdtCoins.length,
     });
   } catch (_err: unknown) {
     return NextResponse.json({
+      popular: [],
       gainers: [],
       losers: [],
       top_volume: [],
       coins: [],
+      total_count: 0,
     });
   }
 }
-
-const FALLBACK_ITEMS = [
-  { symbol: "btc", current_price: 80800, price_change_percentage_24h: 1.25, total_volume: 45000000000, image: "https://coin-images.coingecko.com/coins/images/1/large/bitcoin.png" },
-  { symbol: "eth", current_price: 2355, price_change_percentage_24h: 2.1, total_volume: 22000000000, image: "https://coin-images.coingecko.com/coins/images/279/large/ethereum.png" },
-  { symbol: "sol", current_price: 101.8, price_change_percentage_24h: 4.8, total_volume: 8500000000, image: "https://coin-images.coingecko.com/coins/images/4128/large/solana.png" },
-  { symbol: "sui", current_price: 0.92, price_change_percentage_24h: 5.2, total_volume: 1800000000, image: "https://coin-images.coingecko.com/coins/images/26375/large/sui-ocean-square.png" },
-  { symbol: "near", current_price: 4.65, price_change_percentage_24h: 6.1, total_volume: 950000000, image: "https://coin-images.coingecko.com/coins/images/10365/large/near.png" },
-  { symbol: "xrp", current_price: 1.30, price_change_percentage_24h: 3.1, total_volume: 4200000000, image: "https://coin-images.coingecko.com/coins/images/44/large/xrp-symbol-white-128.png" },
-  { symbol: "doge", current_price: 0.077, price_change_percentage_24h: 1.4, total_volume: 1200000000, image: "https://coin-images.coingecko.com/coins/images/5/large/dogecoin.png" },
-];

@@ -1,51 +1,58 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 600; // Cache 10 minutes
+export const revalidate = 3600; // 1 hour cache
 
-interface CoinGeckoMarketItem {
+interface CoinGeckoLogoItem {
   symbol?: string;
   image?: string;
 }
 
-export async function GET() {
-  try {
-    const res = await fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=150&page=1&sparkline=false", {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-      next: { revalidate: 600 },
-    });
+const STATIC_CORE_LOGOS: Record<string, string> = {
+  BTCUSDT: "https://coin-images.coingecko.com/coins/images/1/small/bitcoin.png",
+  ETHUSDT: "https://coin-images.coingecko.com/coins/images/279/small/ethereum.png",
+  SOLUSDT: "https://coin-images.coingecko.com/coins/images/4128/small/solana.png",
+  BNBUSDT: "https://coin-images.coingecko.com/coins/images/825/small/bnb-icon2_2x.png",
+  XRPUSDT: "https://coin-images.coingecko.com/coins/images/44/small/xrp-symbol-white-128.png",
+  DOGEUSDT: "https://coin-images.coingecko.com/coins/images/5/small/dogecoin.png",
+  ADAUSDT: "https://coin-images.coingecko.com/coins/images/975/small/cardano.png",
+  AVAXUSDT: "https://coin-images.coingecko.com/coins/images/12559/small/Avalanche_Circle_RedWhite_Trans.png",
+  SUIUSDT: "https://coin-images.coingecko.com/coins/images/26375/small/sui-ocean-square.png",
+  LINKUSDT: "https://coin-images.coingecko.com/coins/images/877/small/chainlink-new-logo.png",
+  NEARUSDT: "https://coin-images.coingecko.com/coins/images/10365/small/near.png",
+  PEPEUSDT: "https://coin-images.coingecko.com/coins/images/29850/small/pepe-token.jpeg",
+  TRXUSDT: "https://coin-images.coingecko.com/coins/images/1094/small/tron-logo.png",
+  TONUSDT: "https://coin-images.coingecko.com/coins/images/17980/small/ton_symbol.png",
+  SHIBUSDT: "https://coin-images.coingecko.com/coins/images/11939/small/shiba.png",
+  DOTUSDT: "https://coin-images.coingecko.com/coins/images/12171/small/polkadot.png",
+  LTCUSDT: "https://coin-images.coingecko.com/coins/images/2/small/litecoin.png",
+  UNIUSDT: "https://coin-images.coingecko.com/coins/images/12504/small/uniswap-logo.png",
+  APTUSDT: "https://coin-images.coingecko.com/coins/images/26455/small/aptos_round.png",
+  AAVEUSDT: "https://coin-images.coingecko.com/coins/images/12645/small/AAVE.png",
+};
 
-    const logoMap: Record<string, string> = { ...FALLBACK_LOGOS };
+export async function GET() {
+  const map: Record<string, string> = { ...STATIC_CORE_LOGOS };
+  try {
+    const res = await fetch(
+      "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false",
+      {
+        headers: { Accept: "application/json" },
+        next: { revalidate: 3600 },
+      }
+    );
     if (res.ok) {
-      const data: unknown = await res.json();
-      if (Array.isArray(data)) {
-        for (const coin of data as CoinGeckoMarketItem[]) {
-          const sym = (coin.symbol || "").toUpperCase();
-          const targetKey = sym.endsWith("USDT") ? sym : `${sym}USDT`;
-          if (coin.image) {
-            logoMap[targetKey] = coin.image;
+      const items = (await res.json()) as CoinGeckoLogoItem[];
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          const sym = (item.symbol || "").toUpperCase();
+          if (sym && item.image) {
+            map[`${sym}USDT`] = item.image;
           }
         }
       }
     }
-
-    return NextResponse.json(logoMap);
-  } catch (_err: unknown) {
-    return NextResponse.json(FALLBACK_LOGOS);
+  } catch {
+    // use static core logos map
   }
+  return NextResponse.json(map);
 }
-
-const FALLBACK_LOGOS: Record<string, string> = {
-  BTCUSDT: "https://coin-images.coingecko.com/coins/images/1/large/bitcoin.png",
-  ETHUSDT: "https://coin-images.coingecko.com/coins/images/279/large/ethereum.png",
-  SOLUSDT: "https://coin-images.coingecko.com/coins/images/4128/large/solana.png",
-  XRPUSDT: "https://coin-images.coingecko.com/coins/images/44/large/xrp-symbol-white-128.png",
-  DOGEUSDT: "https://coin-images.coingecko.com/coins/images/5/large/dogecoin.png",
-  SUIUSDT: "https://coin-images.coingecko.com/coins/images/26375/large/sui-ocean-square.png",
-  NEARUSDT: "https://coin-images.coingecko.com/coins/images/10365/large/near.png",
-  LINKUSDT: "https://coin-images.coingecko.com/coins/images/877/large/chainlink-new-logo.png",
-  AVAXUSDT: "https://coin-images.coingecko.com/coins/images/12559/large/Avalanche_Circle_RedWhite_Trans.png",
-  ADAUSDT: "https://coin-images.coingecko.com/coins/images/975/large/cardano.png",
-};

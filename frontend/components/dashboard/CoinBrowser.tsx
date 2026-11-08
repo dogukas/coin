@@ -44,7 +44,7 @@ export default function CoinBrowser() {
 
   // Fetch logo map once
   useEffect(() => {
-    fetch(`${API_URL}/api/market/coingecko/logo-map`)
+    fetch("/api/market/coingecko/logo-map")
       .then((res) => (res.ok ? res.json() : {}))
       .then((data) => setLogoMap(data))
       .catch(() => {});
@@ -53,14 +53,24 @@ export default function CoinBrowser() {
   // Fetch market overview
   const fetchOverview = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/market/overview?limit=30`);
-      if (res.ok) {
-        const data: MarketOverview = await res.json();
-        setOverview(data);
-        setLastUpdated(new Date());
+      const urls = [
+        "/api/market/overview?limit=30",
+        ...(API_URL ? [`${API_URL}/api/market/overview?limit=30`] : []),
+      ];
+      for (const u of urls) {
+        try {
+          const res = await fetch(u);
+          if (!res.ok) continue;
+          const data: MarketOverview = await res.json();
+          if (data && Array.isArray(data.popular) && data.popular.length > 0) {
+            setOverview(data);
+            setLastUpdated(new Date());
+            break;
+          }
+        } catch {
+          // try next
+        }
       }
-    } catch {
-      // Backend not ready
     } finally {
       setIsLoading(false);
     }
@@ -75,13 +85,24 @@ export default function CoinBrowser() {
   const fetchStrongBuys = useCallback(async () => {
     try {
       setIsLoading(true);
-      const res = await fetch(`${API_URL}/api/market/strong-buys?limit=20`);
-      if (res.ok) {
-        const data: MarketCoin[] = await res.json();
-        setStrongBuys(data);
+      const urls = [
+        "/api/market/strong-buys?limit=20",
+        ...(API_URL ? [`${API_URL}/api/market/strong-buys?limit=20`] : []),
+      ];
+      for (const u of urls) {
+        try {
+          const res = await fetch(u);
+          if (!res.ok) continue;
+          const data = await res.json();
+          const list: MarketCoin[] = Array.isArray(data) ? data : data?.signals || [];
+          if (list.length > 0) {
+            setStrongBuys(list);
+            break;
+          }
+        } catch {
+          // try next
+        }
       }
-    } catch {
-      // ignore
     } finally {
       setIsLoading(false);
     }
@@ -107,15 +128,24 @@ export default function CoinBrowser() {
 
     searchTimeoutRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(
-          `${API_URL}/api/market/search?q=${encodeURIComponent(searchQuery)}&limit=20`
-        );
-        if (res.ok) {
-          const data: MarketCoin[] = await res.json();
-          setSearchResults(data);
+        const urls = [
+          `/api/market/search?q=${encodeURIComponent(searchQuery)}&limit=20`,
+          ...(API_URL
+            ? [`${API_URL}/api/market/search?q=${encodeURIComponent(searchQuery)}&limit=20`]
+            : []),
+        ];
+        for (const u of urls) {
+          try {
+            const res = await fetch(u);
+            if (!res.ok) continue;
+            const data = await res.json();
+            const list: MarketCoin[] = Array.isArray(data) ? data : data?.results || [];
+            setSearchResults(list);
+            break;
+          } catch {
+            // try next
+          }
         }
-      } catch {
-        // ignore
       } finally {
         setIsSearching(false);
       }
