@@ -4,7 +4,7 @@
 import type { RadarAlertRecord } from "@/lib/radarHistory";
 import type { Exchange, RadarCoin } from "@/lib/pumpRadar";
 
-export type RadarEventType = "alert" | "pump" | "tp1" | "stop" | "timeout" | "surge" | "system";
+export type RadarEventType = "alert" | "pump" | "tp1" | "tp2" | "stop" | "timeout" | "surge" | "system";
 export type EventTone = "good" | "bad" | "info" | "warn";
 
 export interface RadarEvent {
@@ -75,9 +75,7 @@ export function clearEvents(): void {
 // ── Olay üreticiler ───────────────────────────────────────────────────────────
 
 /**
- * Açık alarmlar için: durum geçişleri (hedef/stop/süre) ve fiyat kilometre taşları.
- * `evaluated`, evaluateHistory çıktısıdır; `before` onun girdisidir.
- * Kilometre taşı bilgisini kayıtlara yazıp güncellenmiş geçmişi döner.
+ * Açık alarmlar ve takip edilen işlemler için: durum geçişleri (TP1/TP2/stop/süre) ve fiyat kilometre taşları.
  */
 export function trackProgress(
   before: RadarAlertRecord[],
@@ -94,14 +92,24 @@ export function trackProgress(
     // Durum geçişi: open → kapalı
     if (prev && prev.status === "open" && rec.status !== "open") {
       const pnl = rec.pnlPct ?? 0;
-      if (rec.status === "tp1") {
+      if (rec.status === "tp2") {
+        events.push({
+          ...common,
+          id: `tp2-${rec.id}-${rec.ts}`,
+          type: "tp2",
+          tone: "good",
+          title: `💰🚀 ${name} ANA HEDEF (TP2) VURULDU! (${fmtSigned(pnl)})`,
+          message: `Giriş $${fmtPrice(rec.entry)} → şimdi $${fmtPrice(rec.closePrice ?? rec.tp2)}. Ana hedefe ulaşıldı, kâr realizasyonu tamamlanabilir!`,
+          notify: true,
+        });
+      } else if (rec.status === "tp1") {
         events.push({
           ...common,
           id: `tp1-${rec.id}-${rec.ts}`,
           type: "tp1",
           tone: "good",
-          title: `✅ ${name} Hedef 1'e ulaştı (${fmtSigned(pnl)})`,
-          message: `Giriş $${fmtPrice(rec.entry)} → şimdi $${fmtPrice(rec.closePrice ?? rec.tp1)}. Kârın bir kısmını almayı veya stop'u girişe çekmeyi düşün.`,
+          title: `✅💰 ${name} Hedef 1'e (TP1) ulaştı (${fmtSigned(pnl)}) — Kâr Al!`,
+          message: `Giriş $${fmtPrice(rec.entry)} → şimdi $${fmtPrice(rec.closePrice ?? rec.tp1)}. Kârın yarısını alıp stop'u girişe ($${fmtPrice(rec.entry)}) çekmeyi düşün.`,
           notify: true,
         });
       } else if (rec.status === "stop") {
@@ -110,8 +118,8 @@ export function trackProgress(
           id: `stop-${rec.id}-${rec.ts}`,
           type: "stop",
           tone: "bad",
-          title: `🛑 ${name} stop seviyesine indi (${fmtSigned(pnl)})`,
-          message: `Plan geçersiz: giriş $${fmtPrice(rec.entry)}, stop $${fmtPrice(rec.stop)}. Pozisyonda isen çıkış öner.`,
+          title: `🛑 ${name} Stop-Loss seviyesine indi (${fmtSigned(pnl)})`,
+          message: `Plan geçersiz: giriş $${fmtPrice(rec.entry)}, stop $${fmtPrice(rec.stop)}. Sermayeyi korumak için çıkış önerilir.`,
           notify: true,
         });
       } else {
@@ -156,23 +164,29 @@ export function trackProgress(
 
 /** Yeni alarm olayları (skor eşiği aşıldı). */
 export function alertEvents(fresh: RadarCoin[], now: number): RadarEvent[] {
-  return fresh.map((c) => ({
-    id: `alert-${c.id}-${now}`,
-    ts: now,
-    type: "alert" as const,
-    tone: "good" as const,
-    coinId: c.id,
-    symbol: c.symbol,
-    exchange: c.exchange,
-    title: `🚀 ${base(c.symbol)} — Radar skoru ${c.score}`,
-    message: `${c.reasons.slice(0, 2).join(" · ")}. Giriş $${fmtPrice(c.plan.entry)} · Stop $${fmtPrice(c.plan.stop)} · Hedef $${fmtPrice(c.plan.tp1)}`,
-    notify: true,
-  }));
+  return fresh.map((c) => {
+    const tag = c.isShortSqueeze
+      ? "🧨 SHORT SQUEEZE + BİRİKİM"
+      : c.isMicroBurst
+      ? "⚡ 15DK SICAK PARA GİRİŞİ"
+      : `Radar skoru ${c.score}`;
+    return {
+      id: `alert-${c.id}-${now}`,
+      ts: now,
+      type: "alert" as const,
+      tone: "good" as const,
+      coinId: c.id,
+      symbol: c.symbol,
+      exchange: c.exchange,
+      title: `🚀 ${base(c.symbol)} — ${tag}`,
+      message: `${c.reasons.slice(0, 2).join(" · ")}. Giriş $${fmtPrice(c.plan.entry)} · Stop $${fmtPrice(c.plan.stop)} · TP1 $${fmtPrice(c.plan.tp1)} (+%${c.plan.tp1Pct.toFixed(1)})`,
+      notify: true,
+    };
+  });
 }
 
 /**
  * Skoru önceki taramaya göre belirgin artan (ama henüz alarm üretmemiş) coinler.
- * `recentSurgeCoinIds`: son 30 dakikada zaten surge bildirilen coinler (tekrarı önler).
  */
 export function detectSurges(
   coins: RadarCoin[],
@@ -184,6 +198,7 @@ export function detectSurges(
 ): RadarEvent[] {
   const out: RadarEvent[] = [];
   for (const c of coins) {
+    if (c.isBullTrap) continue;
     const prev = prevScores[c.id];
     if (prev === undefined) continue;
     if (freshIds.has(c.id) || recentSurgeCoinIds.has(c.id)) continue;
@@ -234,4 +249,3 @@ export function recentSurgeIds(events: RadarEvent[], now: number): Set<string> {
   }
   return ids;
 }
-

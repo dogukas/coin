@@ -1,10 +1,10 @@
-// Pump Radar alarm geçmişi — localStorage'da tutulur, sunucu state'i gerekmez.
-// Her alarm için giriş/stop/TP1 kaydedilir; sonraki taramalardaki fiyatla sonuçlandırılır.
-// NOT: Fiyat ~60 sn'de bir örneklenir; kısa fitiller / hızlı hareketler kaçabilir.
+// Pump Radar alarm geçmişi & aktif işlem takipçisi — localStorage'da tutulur, sunucu state'i gerekmez.
+// Her alarm veya kullanıcının "🎯 İşlemi Takibe Al" dediği coin için giriş/stop/TP1/TP2 kaydedilir;
+// sonraki taramalardaki canlı fiyatla TP1, TP2 veya Stop vuruşları anında bildirilir.
 
 import type { Exchange, RadarCoin } from "@/lib/pumpRadar";
 
-export type AlertStatus = "open" | "tp1" | "stop" | "timeout";
+export type AlertStatus = "open" | "tp1" | "tp2" | "stop" | "timeout";
 
 export interface RadarAlertRecord {
   id: string;
@@ -18,6 +18,10 @@ export interface RadarAlertRecord {
   tp2: number;
   reasons: string[];
   status: AlertStatus;
+  /** Kullanıcı "🎯 İşlemi Takibe Al" butonuna basarak mı ekledi? */
+  manual?: boolean;
+  /** TP1 seviyesine ulaşıldı mı? (TP1 sonrası stop girişe çekilir ve TP2 beklenir) */
+  tp1Hit?: boolean;
   closedAt?: number;
   closePrice?: number;
   /** Kapanış (veya son) fiyatına göre % kâr/zarar */
@@ -30,9 +34,10 @@ export interface RadarStats {
   total: number;
   open: number;
   tp1: number;
+  tp2: number;
   stop: number;
   timeout: number;
-  /** TP1'e ulaşan / kapanan alarm (%). Kapanan yoksa null */
+  /** TP1 veya TP2'ye ulaşan / kapanan alarm (%). Kapanan yoksa null */
   hitRate: number | null;
   /** Kapanan alarmların ortalama % getirisi */
   avgPnl: number | null;
@@ -69,7 +74,7 @@ export function clearHistory(): void {
   window.localStorage.removeItem(STORAGE_KEY);
 }
 
-/** Eşik üstü yeni coinler için kayıt açar. Aynı coin 6 saat içinde tekrar alarm üretmez. */
+/** Eşik üstü yeni coinler için kayıt açar. Tuzak (isBullTrap) coinler otomatik elenir! */
 export function addAlerts(
   history: RadarAlertRecord[],
   coins: RadarCoin[],
@@ -79,6 +84,7 @@ export function addAlerts(
   const fresh: RadarCoin[] = [];
   const records: RadarAlertRecord[] = [];
   for (const coin of coins) {
+    if (coin.isBullTrap) continue; // Sahte pump / tuzak coinler için otomatik alarm üretme
     if (coin.score < threshold) continue;
     const recentlyAlerted = history.some((h) => h.id === coin.id && now - h.ts < DEDUP_MS);
     if (recentlyAlerted) continue;
@@ -95,12 +101,53 @@ export function addAlerts(
       tp2: coin.plan.tp2,
       reasons: coin.reasons.slice(0, 3),
       status: "open",
+      manual: false,
     });
   }
   return { history: [...records, ...history].slice(0, MAX_HISTORY), fresh };
 }
 
-/** Açık alarmları güncel fiyatlarla sonuçlandırır. */
+/** Kullanıcının "🎯 İşlemi Takibe Al" butonuna bastığı coini aktif takibe ekler. */
+export function addManualTrack(
+  history: RadarAlertRecord[],
+  coin: RadarCoin,
+  now: number
+): { history: RadarAlertRecord[]; added: boolean } {
+  const existingOpen = history.find((h) => h.id === coin.id && h.status === "open");
+  if (existingOpen) {
+    // Zaten açık kaydı varsa manual=true olarak işaretle
+    const updated = history.map((h) =>
+      h.id === coin.id && h.status === "open" ? { ...h, manual: true } : h
+    );
+    return { history: updated, added: false };
+  }
+  const rec: RadarAlertRecord = {
+    id: coin.id,
+    symbol: coin.symbol,
+    exchange: coin.exchange,
+    ts: now,
+    score: coin.score,
+    entry: coin.plan.entry,
+    stop: coin.plan.stop,
+    tp1: coin.plan.tp1,
+    tp2: coin.plan.tp2,
+    reasons: coin.reasons.slice(0, 3),
+    status: "open",
+    manual: true,
+  };
+  return { history: [rec, ...history].slice(0, MAX_HISTORY), added: true };
+}
+
+/** Açık bir takibi manuel kapatır veya listeden kaldırır. */
+export function removeTrackedRecord(
+  history: RadarAlertRecord[],
+  id: string,
+  ts: number
+): RadarAlertRecord[] {
+  return history.filter((h) => !(h.id === id && h.ts === ts));
+}
+
+/** Açık alarmları ve takip edilen işlemleri güncel fiyatlarla sonuçlandırır. */
 export function evaluateHistory(
   history: RadarAlertRecord[],
   prices: Record<string, number>,
@@ -109,11 +156,47 @@ export function evaluateHistory(
   return history.map((h) => {
     if (h.status !== "open") return h;
     const price = prices[h.id];
-    if (price && price >= h.tp1) {
-      return { ...h, status: "tp1", closedAt: now, closePrice: price, pnlPct: (price / h.entry - 1) * 100 };
-    }
-    if (price && price <= h.stop) {
-      return { ...h, status: "stop", closedAt: now, closePrice: price, pnlPct: (price / h.entry - 1) * 100 };
+    if (price && h.entry > 0) {
+      const currentPnl = (price / h.entry - 1) * 100;
+      // Ana Hedef (TP2) vurulduysa işlemi TP2 zaferiyle kapat
+      if (price >= h.tp2) {
+        return {
+          ...h,
+          tp1Hit: true,
+          status: "tp2",
+          closedAt: now,
+          closePrice: price,
+          pnlPct: currentPnl,
+        };
+      }
+      // Hedef 1 (TP1) vurulduysa
+      if (price >= h.tp1) {
+        return {
+          ...h,
+          tp1Hit: true,
+          status: "tp1",
+          closedAt: now,
+          closePrice: price,
+          pnlPct: currentPnl,
+        };
+      }
+      // Stop-Loss seviyesine inildiyse
+      if (price <= h.stop) {
+        return {
+          ...h,
+          status: "stop",
+          closedAt: now,
+          closePrice: price,
+          pnlPct: currentPnl,
+        };
+      }
+      // Açık işlemde anlık kâr/zararı güncelle
+      if (now - h.ts <= TIMEOUT_MS) {
+        return {
+          ...h,
+          pnlPct: currentPnl,
+        };
+      }
     }
     if (now - h.ts > TIMEOUT_MS) {
       const closePrice = price ?? h.entry;
@@ -131,7 +214,8 @@ export function evaluateHistory(
 
 export function computeStats(history: RadarAlertRecord[]): RadarStats {
   const open = history.filter((h) => h.status === "open").length;
-  const tp1 = history.filter((h) => h.status === "tp1").length;
+  const tp1 = history.filter((h) => h.status === "tp1" || h.status === "tp2").length;
+  const tp2 = history.filter((h) => h.status === "tp2").length;
   const stop = history.filter((h) => h.status === "stop").length;
   const timeout = history.filter((h) => h.status === "timeout").length;
   const closed = tp1 + stop + timeout;
@@ -142,10 +226,10 @@ export function computeStats(history: RadarAlertRecord[]): RadarStats {
     total: history.length,
     open,
     tp1,
+    tp2,
     stop,
     timeout,
     hitRate: closed > 0 ? (tp1 / closed) * 100 : null,
     avgPnl: pnls.length > 0 ? pnls.reduce((a, b) => a + b, 0) / pnls.length : null,
   };
 }
-

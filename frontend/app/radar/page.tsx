@@ -16,6 +16,7 @@ import {
   Volume2,
   VolumeX,
   ShieldAlert,
+  ShieldCheck,
   Target,
   Trash2,
   LineChart,
@@ -32,15 +33,21 @@ import {
   Home,
   LayoutGrid,
   Coins,
+  Zap,
+  CheckCircle2,
+  Crosshair,
+  X,
 } from "lucide-react";
 import { useDashboardStore } from "@/lib/store";
-import type { RadarCoin, RadarPayload, ScoreBreakdown } from "@/lib/pumpRadar";
+import type { BtcShieldStatus, RadarCoin, RadarPayload, ScoreBreakdown } from "@/lib/pumpRadar";
 import {
   addAlerts,
+  addManualTrack,
   clearHistory,
   computeStats,
   evaluateHistory,
   loadHistory,
+  removeTrackedRecord,
   saveHistory,
   type AlertStatus,
   type RadarAlertRecord,
@@ -165,19 +172,198 @@ function BreakdownBar({ breakdown }: { breakdown: ScoreBreakdown }) {
   );
 }
 
+function BtcShieldBanner({ shield }: { shield: BtcShieldStatus }) {
+  const tone =
+    shield.state === "DANGER"
+      ? {
+          wrap: "border-rose-500/40 bg-gradient-to-r from-rose-950/50 via-[#0d0e12] to-[#0d0e12]",
+          badge: "bg-rose-500/20 text-rose-300 border-rose-500/40",
+          icon: <ShieldAlert size={16} className="text-rose-400 animate-pulse flex-none" />,
+        }
+      : shield.state === "CAUTION"
+      ? {
+          wrap: "border-amber-500/35 bg-gradient-to-r from-amber-950/35 via-[#0d0e12] to-[#0d0e12]",
+          badge: "bg-amber-500/20 text-amber-300 border-amber-500/40",
+          icon: <ShieldAlert size={16} className="text-amber-400 flex-none" />,
+        }
+      : {
+          wrap: "border-emerald-500/30 bg-gradient-to-r from-emerald-950/30 via-[#0d0e12] to-[#0d0e12]",
+          badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/35",
+          icon: <ShieldCheck size={16} className="text-emerald-400 flex-none" />,
+        };
+
+  return (
+    <section className={`rounded-2xl border p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${tone.wrap}`}>
+      <div className="flex items-start gap-2.5">
+        <div className="mt-0.5">{tone.icon}</div>
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold text-white">{shield.headline}</span>
+            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${tone.badge}`}>
+              BTC ${fmtPrice(shield.price)} · 15dk {fmtPct(shield.change15m)} · 1s {fmtPct(shield.change1h)}
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-300 leading-relaxed">{shield.detail}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ActiveTrackedPanel({
+  records,
+  prices,
+  onRemove,
+  onOpenChart,
+}: {
+  records: RadarAlertRecord[];
+  prices: Record<string, number>;
+  onRemove: (id: string, ts: number) => void;
+  onOpenChart: (symbol: string) => void;
+}) {
+  if (records.length === 0) return null;
+
+  return (
+    <section className="rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/25 via-[#0d0e12] to-[#0d0e12] p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 text-xs font-bold text-cyan-300">
+          <Crosshair size={15} className="animate-pulse" />
+          <span>CANLI HEDEF &amp; STOP TAKİPÇİSİ ({records.length} Aktif İşlem)</span>
+        </div>
+        <span className="text-[10px] text-gray-400">
+          TP1, TP2 veya Stop vurulduğu an sesli + telefon/masaüstü bildirimi gönderilir
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+        {records.map((r) => {
+          const base = r.symbol.replace("USDT", "");
+          const livePrice = prices[r.id] ?? r.entry;
+          const pnl = r.entry > 0 ? ((livePrice - r.entry) / r.entry) * 100 : 0;
+          const totalSpan = Math.max(0.000001, r.tp2 - r.stop);
+          const progressPct = Math.min(100, Math.max(0, ((livePrice - r.stop) / totalSpan) * 100));
+          const entryPosPct = Math.min(100, Math.max(0, ((r.entry - r.stop) / totalSpan) * 100));
+          const tp1PosPct = Math.min(100, Math.max(0, ((r.tp1 - r.stop) / totalSpan) * 100));
+
+          return (
+            <div
+              key={`${r.id}-${r.ts}`}
+              className="rounded-xl bg-black/50 border border-white/10 p-3 flex flex-col gap-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-white">{base}/USDT</span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-gray-300">
+                    {r.exchange}
+                  </span>
+                  {r.manual && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/30 text-cyan-300">
+                      Manuel Takip
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`font-mono text-xs font-extrabold px-2 py-0.5 rounded ${
+                      pnl >= 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"
+                    }`}
+                  >
+                    {fmtPct(pnl)}
+                  </span>
+                  {r.exchange === "BINANCE" && (
+                    <button
+                      onClick={() => onOpenChart(r.symbol)}
+                      className="p-1 rounded bg-white/5 hover:bg-white/10 text-gray-300"
+                      title="Grafikte aç"
+                    >
+                      <LineChart size={12} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onRemove(r.id, r.ts)}
+                    className="p-1 rounded bg-white/5 hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 transition-colors"
+                    title="Takipten çıkar"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Stop -> Giriş -> TP1 -> TP2 İlerleme Çubuğu */}
+              <div className="relative h-2 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-500 ${
+                    livePrice >= r.entry ? "bg-emerald-400" : "bg-rose-400"
+                  }`}
+                  style={{ width: `${progressPct}%` }}
+                />
+                <span
+                  className="absolute top-0 bottom-0 w-0.5 bg-white/70"
+                  style={{ left: `${entryPosPct}%` }}
+                  title="Giriş"
+                />
+                <span
+                  className="absolute top-0 bottom-0 w-0.5 bg-emerald-300"
+                  style={{ left: `${tp1PosPct}%` }}
+                  title="TP1"
+                />
+              </div>
+
+              <div className="grid grid-cols-4 gap-1 font-mono text-[10px] text-gray-400">
+                <div>
+                  <span className="block text-[8px] text-rose-400 uppercase font-sans">Stop</span>
+                  <b className="text-rose-300">${fmtPrice(r.stop)}</b>
+                </div>
+                <div>
+                  <span className="block text-[8px] text-gray-400 uppercase font-sans">Giriş</span>
+                  <b className="text-gray-200">${fmtPrice(r.entry)}</b>
+                </div>
+                <div>
+                  <span className="block text-[8px] text-cyan-300 uppercase font-sans">Canlı</span>
+                  <b className="text-white">${fmtPrice(livePrice)}</b>
+                </div>
+                <div className="text-right">
+                  <span className="block text-[8px] text-emerald-400 uppercase font-sans">TP1 / TP2</span>
+                  <b className="text-emerald-300">
+                    ${fmtPrice(r.tp1)} / ${fmtPrice(r.tp2)}
+                  </b>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function CoinCard({
   coin,
   rank,
+  isTracked,
+  onTrack,
   onOpenChart,
 }: {
   coin: RadarCoin;
   rank: number;
+  isTracked: boolean;
+  onTrack: (coin: RadarCoin) => void;
   onOpenChart: (symbol: string) => void;
 }) {
   const tone = scoreTone(coin.score);
   const base = coin.symbol.replace("USDT", "");
   return (
-    <article className="rounded-2xl border border-white/5 bg-[#0d0e12] p-4 flex flex-col gap-3 hover:border-white/15 transition-colors">
+    <article
+      className={`rounded-2xl border p-4 flex flex-col gap-3 transition-colors ${
+        coin.isBullTrap
+          ? "border-rose-500/35 bg-gradient-to-br from-rose-950/20 via-[#0d0e12] to-[#0d0e12]"
+          : coin.isShortSqueeze
+          ? "border-violet-500/35 bg-gradient-to-br from-violet-950/20 via-[#0d0e12] to-[#0d0e12]"
+          : coin.isMicroBurst
+          ? "border-amber-500/35 bg-gradient-to-br from-amber-950/20 via-[#0d0e12] to-[#0d0e12]"
+          : "border-white/5 bg-[#0d0e12] hover:border-white/15"
+      }`}
+    >
       <div className="flex items-start gap-3">
         <div className={`flex-none w-14 h-14 rounded-xl border flex flex-col items-center justify-center ${tone.ring}`}>
           <span className={`font-mono text-xl font-extrabold leading-none ${tone.text}`}>{coin.score}</span>
@@ -198,9 +384,34 @@ function CoinCard({
             >
               {coin.exchange}
             </span>
+
+            {/* Özellik 2: Short Squeeze Rozeti */}
+            {coin.isShortSqueeze && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/20 border border-violet-400/40 text-violet-200 shadow-[0_0_12px_rgba(139,92,246,0.3)]">
+                🧨 SHORT SQUEEZE ADAYI
+                {coin.funding !== null ? ` (${(coin.funding * 100).toFixed(3)}%)` : ""}
+              </span>
+            )}
+
+            {/* Özellik 3: 15dk Sıcak Para Girişi Rozeti */}
+            {coin.isMicroBurst && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
+                <Zap size={10} /> 15DK SICAK PARA ({coin.burst15mSpike.toFixed(1)}x)
+              </span>
+            )}
+
+            {/* Özellik 4: Sahte Pump / Tuzak Avcısı Rozeti */}
+            {coin.isBullTrap && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/25 border border-rose-400/50 text-rose-200">
+                <ShieldAlert size={11} /> TUZAK / DAĞITIM UYARISI
+              </span>
+            )}
           </div>
           <div className="mt-1 flex items-baseline gap-3 font-mono text-xs text-gray-400 flex-wrap">
             <span className="text-white font-semibold">${fmtPrice(coin.price)}</span>
+            <span className={coin.change15m >= 0 ? "text-emerald-400" : "text-rose-400"}>
+              15dk {fmtPct(coin.change15m)}
+            </span>
             <span className={coin.change1h >= 0 ? "text-emerald-400" : "text-rose-400"}>1s {fmtPct(coin.change1h)}</span>
             <span className={coin.change4h >= 0 ? "text-emerald-400" : "text-rose-400"}>4s {fmtPct(coin.change4h)}</span>
             <span className={coin.change24h >= 0 ? "text-emerald-400" : "text-rose-400"}>24s {fmtPct(coin.change24h)}</span>
@@ -208,15 +419,38 @@ function CoinCard({
           </div>
         </div>
 
-        {coin.exchange === "BINANCE" && (
+        <div className="flex items-center gap-1.5 flex-wrap">
           <button
-            onClick={() => onOpenChart(coin.symbol)}
-            className="flex-none flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] text-gray-300 transition-colors"
-            title="Ana panelde grafikle aç"
+            onClick={() => onTrack(coin)}
+            disabled={isTracked}
+            className={`flex-none flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+              isTracked
+                ? "bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 cursor-default"
+                : "bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.2)]"
+            }`}
+            title="Bu coinin Giriş / TP1 / TP2 / Stop seviyelerini canlı takibe al ve vurulduğunda bildirim gönder"
           >
-            <LineChart size={12} /> Grafik
+            {isTracked ? (
+              <>
+                <CheckCircle2 size={12} /> Takipte
+              </>
+            ) : (
+              <>
+                <Crosshair size={12} /> İşlemi Takibe Al
+              </>
+            )}
           </button>
-        )}
+
+          {coin.exchange === "BINANCE" && (
+            <button
+              onClick={() => onOpenChart(coin.symbol)}
+              className="flex-none flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] text-gray-300 transition-colors"
+              title="Ana panelde grafikle aç"
+            >
+              <LineChart size={12} /> Grafik
+            </button>
+          )}
+        </div>
       </div>
 
       <BreakdownBar breakdown={coin.breakdown} />
@@ -231,22 +465,31 @@ function CoinCard({
         ))}
       </ul>
 
-      {/* İşlem planı */}
+      {/* Özellik 1: Otomatik İşlem Planı (Giriş / Stop / TP1 / TP2) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-xs">
         <div className="rounded-lg bg-black/40 border border-white/5 px-2.5 py-2">
-          <div className="text-[9px] uppercase text-gray-500 font-sans">Giriş</div>
+          <div className="text-[9px] uppercase text-gray-500 font-sans">İdeal Giriş</div>
           <div className="text-white font-semibold">${fmtPrice(coin.plan.entry)}</div>
         </div>
-        <div className="rounded-lg bg-black/40 border border-white/5 px-2.5 py-2">
-          <div className="text-[9px] uppercase text-gray-500 font-sans">Stop (-%{coin.plan.riskPct.toFixed(1)})</div>
+        <div className="rounded-lg bg-black/40 border border-rose-500/20 px-2.5 py-2">
+          <div className="text-[9px] uppercase text-rose-400/80 font-sans">
+            Stop-Loss (-%{coin.plan.riskPct.toFixed(1)})
+          </div>
           <div className="text-rose-400 font-semibold">${fmtPrice(coin.plan.stop)}</div>
         </div>
-        <div className="rounded-lg bg-black/40 border border-white/5 px-2.5 py-2">
-          <div className="text-[9px] uppercase text-gray-500 font-sans">Hedef 1 (2R)</div>
+        <div className="rounded-lg bg-black/40 border border-emerald-500/25 px-2.5 py-2">
+          <div className="text-[9px] uppercase text-emerald-400/90 font-sans flex items-center justify-between">
+            <span>Hedef 1 (+%{coin.plan.tp1Pct.toFixed(1)})</span>
+            {coin.plan.wallAdjusted && (
+              <span className="text-[8px] px-1 rounded bg-emerald-500/20 text-emerald-300">Duvar Altı</span>
+            )}
+          </div>
           <div className="text-emerald-400 font-semibold">${fmtPrice(coin.plan.tp1)}</div>
         </div>
-        <div className="rounded-lg bg-black/40 border border-white/5 px-2.5 py-2">
-          <div className="text-[9px] uppercase text-gray-500 font-sans">Hedef 2 (3.5R)</div>
+        <div className="rounded-lg bg-black/40 border border-emerald-500/20 px-2.5 py-2">
+          <div className="text-[9px] uppercase text-emerald-300/80 font-sans">
+            Hedef 2 (+%{coin.plan.tp2Pct.toFixed(1)} · 1:{coin.plan.rrRatio}R)
+          </div>
           <div className="text-emerald-300 font-semibold">${fmtPrice(coin.plan.tp2)}</div>
         </div>
       </div>
@@ -256,7 +499,11 @@ function CoinCard({
           {coin.risks.map((r) => (
             <span
               key={r}
-              className="flex items-center gap-1 text-[10px] text-amber-300/90 bg-amber-400/5 border border-amber-400/20 rounded-md px-2 py-1"
+              className={`flex items-center gap-1 text-[10px] rounded-md px-2 py-1 border ${
+                r.includes("CVD") || r.includes("Bull-Trap") || r.includes("Satış Duvarı")
+                  ? "text-rose-200 bg-rose-500/15 border-rose-400/35 font-semibold"
+                  : "text-amber-300/90 bg-amber-400/5 border-amber-400/20"
+              }`}
             >
               <ShieldAlert size={10} /> {r}
             </span>
@@ -270,6 +517,7 @@ function CoinCard({
 const STATUS_META: Record<AlertStatus, { label: string; cls: string }> = {
   open: { label: "AÇIK", cls: "border-sky-400/30 text-sky-300 bg-sky-400/5" },
   tp1: { label: "HEDEF 1 ✓", cls: "border-emerald-400/40 text-emerald-300 bg-emerald-400/10" },
+  tp2: { label: "ANA HEDEF (TP2) 🚀", cls: "border-emerald-400/60 text-emerald-200 bg-emerald-500/20" },
   stop: { label: "STOP ✗", cls: "border-rose-400/40 text-rose-300 bg-rose-400/10" },
   timeout: { label: "24S DOLDU", cls: "border-white/15 text-gray-300 bg-white/5" },
 };
@@ -395,6 +643,7 @@ export default function RadarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"radar" | "events" | "history">("radar");
+  const [filterMode, setFilterMode] = useState<"clean" | "micro_burst" | "short_squeeze" | "traps">("clean");
   const [threshold, setThreshold] = useState<number>(70);
   const [soundOn, setSoundOn] = useState(false);
   const [notifyPerm, setNotifyPerm] = useState<NotifyPermission>("default");
@@ -750,6 +999,43 @@ export default function RadarPage() {
     router.push("/");
   };
 
+  const handleTrackCoin = (coin: RadarCoin) => {
+    const ts = Date.now();
+    const { history: nextHistory, added } = addManualTrack(history, coin, ts);
+    saveHistory(nextHistory);
+    setHistory(nextHistory);
+
+    const baseName = coin.symbol.replace("USDT", "");
+    if (added) {
+      const ev: RadarEvent = {
+        id: `track-${coin.id}-${ts}`,
+        ts,
+        type: "alert",
+        tone: "info",
+        coinId: coin.id,
+        symbol: coin.symbol,
+        exchange: coin.exchange,
+        title: `🎯 ${baseName} Canlı Hedef Takibine Alındı`,
+        message: `Giriş $${fmtPrice(coin.plan.entry)} · Stop $${fmtPrice(coin.plan.stop)} · TP1 $${fmtPrice(coin.plan.tp1)} (+%${coin.plan.tp1Pct.toFixed(1)}) · TP2 $${fmtPrice(coin.plan.tp2)} (+%${coin.plan.tp2Pct.toFixed(1)}). Seviyeler vurulduğunda anında bildirim gönderilecek.`,
+        notify: false,
+      };
+      const nextEvents = [ev, ...events].slice(0, MAX_EVENTS);
+      setEvents(nextEvents);
+      saveEvents(nextEvents);
+    }
+    toast.success(`🎯 ${baseName}/USDT canlı takibe alındı!`, {
+      description: `TP1 ($${fmtPrice(coin.plan.tp1)}), TP2 ($${fmtPrice(coin.plan.tp2)}) veya Stop ($${fmtPrice(coin.plan.stop)}) seviyesine ulaştığında bildirim alacaksınız.`,
+      duration: 6000,
+    });
+  };
+
+  const handleRemoveTracked = (id: string, ts: number) => {
+    const nextHistory = removeTrackedRecord(history, id, ts);
+    saveHistory(nextHistory);
+    setHistory(nextHistory);
+    toast("İşlem canlı takipten çıkarıldı");
+  };
+
   const handleClearHistory = () => {
     clearHistory();
     setHistory([]);
@@ -762,8 +1048,28 @@ export default function RadarPage() {
   };
 
   const stats = computeStats(history);
-  const coins = data?.coins ?? [];
+  const allCoins = data?.coins ?? [];
+  const cleanCoins = allCoins.filter((c) => !c.isBullTrap);
+  const microBurstCoins = allCoins.filter((c) => c.isMicroBurst && !c.isBullTrap);
+  const squeezeCoins = allCoins.filter((c) => c.isShortSqueeze && !c.isBullTrap);
+  const trapCoins = allCoins.filter((c) => c.isBullTrap);
+
+  const displayedCoins =
+    filterMode === "micro_burst"
+      ? microBurstCoins
+      : filterMode === "short_squeeze"
+      ? squeezeCoins
+      : filterMode === "traps"
+      ? trapCoins
+      : cleanCoins;
+
+  const openRecords = history.filter((h) => h.status === "open");
+  const openIdsSet = new Set(openRecords.map((h) => h.id));
   const latestEvents = events.slice(0, 3);
+  const livePricesMap: Record<string, number> = { ...(data?.prices ?? {}) };
+  for (const c of allCoins) {
+    livePricesMap[c.id] = c.price;
+  }
 
   return (
     <div className="min-h-screen bg-[#08090b] text-white">
@@ -958,6 +1264,17 @@ export default function RadarPage() {
           </section>
         )}
 
+        {/* Özellik 4: Canlı BTC Tehlike Kalkanı */}
+        {data?.btcShield && <BtcShieldBanner shield={data.btcShield} />}
+
+        {/* Özellik 1: Aktif Takip Edilen İşlemlerim (Canlı TP1 / TP2 / Stop İzleyici) */}
+        <ActiveTrackedPanel
+          records={openRecords}
+          prices={livePricesMap}
+          onRemove={handleRemoveTracked}
+          onOpenChart={openChart}
+        />
+
         {/* Canlı Olan Biten Şeridi */}
         <section className="rounded-2xl border border-white/10 bg-[#0d0e12] p-3.5 flex flex-col gap-2.5">
           <div className="flex items-center justify-between">
@@ -1029,9 +1346,9 @@ export default function RadarPage() {
             tone="text-gray-300"
           />
           <StatCard
-            label="Listede"
-            value={String(coins.length)}
-            sub={`${coins.filter((c) => c.score >= threshold).length} adet ≥${threshold}`}
+            label="Temiz Aday"
+            value={String(cleanCoins.length)}
+            sub={`${cleanCoins.filter((c) => c.score >= threshold).length} adet ≥${threshold} · ${trapCoins.length} tuzak elendi`}
             tone="text-emerald-400"
           />
           <StatCard
@@ -1043,7 +1360,7 @@ export default function RadarPage() {
           <StatCard
             label="Ort. K/Z"
             value={stats.avgPnl === null ? "—" : fmtPct(stats.avgPnl)}
-            sub={`${stats.open} açık alarm`}
+            sub={`${stats.open} açık takip`}
             tone={stats.avgPnl === null ? "text-white" : stats.avgPnl >= 0 ? "text-emerald-400" : "text-rose-400"}
           />
         </section>
@@ -1057,7 +1374,7 @@ export default function RadarPage() {
                 tab === "radar" ? "bg-emerald-500/20 text-emerald-300" : "text-gray-400 hover:text-white"
               }`}
             >
-              <Flame size={12} /> Radar ({coins.length})
+              <Flame size={12} /> Radar ({cleanCoins.length})
             </button>
             <button
               onClick={() => {
@@ -1114,22 +1431,85 @@ export default function RadarPage() {
         )}
 
         {tab === "radar" ? (
-          loading && !data ? (
-            <div className="rounded-2xl border border-white/5 bg-[#0d0e12] p-12 flex flex-col items-center gap-3 text-sm text-gray-400">
-              <Loader2 className="animate-spin text-emerald-400" />
-              Yaklaşık 120 coin taranıyor (ilk tarama birkaç saniye sürer)…
+          <>
+            {/* Hızlı Strateji Filtreleri (Özellik 2, 3, 4) */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setFilterMode("clean")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  filterMode === "clean"
+                    ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-200"
+                    : "bg-white/5 border-white/10 text-gray-400 hover:text-white"
+                }`}
+              >
+                <Flame size={12} /> Temiz Birikim ({cleanCoins.length})
+              </button>
+
+              <button
+                onClick={() => setFilterMode("micro_burst")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  filterMode === "micro_burst"
+                    ? "bg-amber-500/20 border-amber-400/50 text-amber-200"
+                    : "bg-white/5 border-white/10 text-gray-400 hover:text-white"
+                }`}
+              >
+                <Zap size={12} /> ⚡ 15dk Sıcak Para ({microBurstCoins.length})
+              </button>
+
+              <button
+                onClick={() => setFilterMode("short_squeeze")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  filterMode === "short_squeeze"
+                    ? "bg-violet-500/20 border-violet-400/50 text-violet-200"
+                    : "bg-white/5 border-white/10 text-gray-400 hover:text-white"
+                }`}
+              >
+                🧨 Short Squeeze Adayları ({squeezeCoins.length})
+              </button>
+
+              <button
+                onClick={() => setFilterMode("traps")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  filterMode === "traps"
+                    ? "bg-rose-500/20 border-rose-400/50 text-rose-200"
+                    : "bg-white/5 border-white/10 text-gray-400 hover:text-white"
+                }`}
+                title="CVD uyumsuzluğu, ağır satış duvarı veya üst fitil reddi nedeniyle elenen sahte yükselişler"
+              >
+                <ShieldAlert size={12} /> 🛡️ Yakalanan Tuzaklar ({trapCoins.length})
+              </button>
             </div>
-          ) : coins.length === 0 ? (
-            <div className="rounded-2xl border border-white/5 bg-[#0d0e12] p-12 text-center text-sm text-gray-400">
-              Şu an anlamlı birikim sinyali veren coin yok. Piyasa sakin olabilir — radar her 60 saniyede yeniden tarar.
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {coins.map((c, i) => (
-                <CoinCard key={c.id} coin={c} rank={i + 1} onOpenChart={openChart} />
-              ))}
-            </div>
-          )
+
+            {loading && !data ? (
+              <div className="rounded-2xl border border-white/5 bg-[#0d0e12] p-12 flex flex-col items-center gap-3 text-sm text-gray-400">
+                <Loader2 className="animate-spin text-emerald-400" />
+                Yaklaşık 120 coin taranıyor (ilk tarama birkaç saniye sürer)…
+              </div>
+            ) : displayedCoins.length === 0 ? (
+              <div className="rounded-2xl border border-white/5 bg-[#0d0e12] p-12 text-center text-sm text-gray-400">
+                {filterMode === "micro_burst"
+                  ? "Şu an son 15 dakikada ani sıcak para patlaması yapan coin yok."
+                  : filterMode === "short_squeeze"
+                  ? "Şu an negatif fonlama + spot alıcı sıkışması gösteren Short Squeeze adayı yok."
+                  : filterMode === "traps"
+                  ? "Şu an tespit edilen sahte pump / dağıtım tuzağı yok."
+                  : "Şu an anlamlı birikim sinyali veren coin yok. Piyasa sakin olabilir — radar her 60 saniyede yeniden tarar."}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {displayedCoins.map((c, i) => (
+                  <CoinCard
+                    key={c.id}
+                    coin={c}
+                    rank={i + 1}
+                    isTracked={openIdsSet.has(c.id)}
+                    onTrack={handleTrackCoin}
+                    onOpenChart={openChart}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         ) : tab === "events" ? (
           <EventFeedList events={events} now={now} onOpenChart={openChart} />
         ) : (

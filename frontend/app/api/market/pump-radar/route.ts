@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   buildRadarCoin,
   coinId,
-  computeBookRatio,
+  computeBookMetrics,
+  computeBtcShield,
   parseKlines,
   type Candle,
   type CoinMeta,
@@ -18,13 +19,16 @@ export const maxDuration = 30;
 const CACHE_TTL_MS = 45_000;
 const KLINE_LIMIT = 96; // 96 x 15dk = 24 saat
 const TOP_PER_EXCHANGE = 60;
-const BOOK_TOP_N = 12;
-const MIN_LIST_SCORE = 35;
-const MAX_LIST = 30;
+const BOOK_TOP_N = 14;
+const MIN_LIST_SCORE = 32;
+const MAX_LIST = 35;
 
 const BINANCE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com"];
 const MEXC_HOST = "https://api.mexc.com";
-const FUTURES_URL = "https://fapi.binance.com/fapi/v1/premiumIndex";
+const FUTURES_URLS = [
+  "https://fapi.binance.com/fapi/v1/premiumIndex",
+  "https://www.binance.com/fapi/v1/premiumIndex",
+];
 
 const MIN_VOLUME: Record<Exchange, number> = { BINANCE: 1_000_000, MEXC: 150_000 };
 
@@ -100,7 +104,11 @@ function isTradable(symbol: string, exchange: Exchange, volume: number): boolean
   return volume >= MIN_VOLUME[exchange];
 }
 
-function toMetas(tickers: RawTicker[] | null, exchange: Exchange): CoinMeta[] {
+function toMetas(
+  tickers: RawTicker[] | null,
+  exchange: Exchange,
+  prioritySymbols?: ReadonlySet<string>
+): CoinMeta[] {
   if (!tickers) return [];
   const metas: CoinMeta[] = [];
   for (const t of tickers) {
@@ -110,11 +118,21 @@ function toMetas(tickers: RawTicker[] | null, exchange: Exchange): CoinMeta[] {
     if (!(price > 0) || !Number.isFinite(volume)) continue;
     if (!isTradable(t.symbol, exchange, volume)) continue;
     const change24h = open > 0 ? (price / open - 1) * 100 : 0;
-    // Fiyatı sabit stabil benzeri çiftleri ele
     if (price > 0.97 && price < 1.03 && Math.abs(change24h) < 0.5) continue;
     metas.push({ symbol: t.symbol, exchange, price, change24h, volume24hUsd: volume });
   }
-  return metas.sort((a, b) => b.volume24hUsd - a.volume24hUsd).slice(0, TOP_PER_EXCHANGE);
+  const sorted = metas.sort((a, b) => b.volume24hUsd - a.volume24hUsd);
+  const top = sorted.slice(0, TOP_PER_EXCHANGE);
+  if (prioritySymbols && prioritySymbols.size > 0) {
+    const topSet = new Set(top.map((m) => m.symbol));
+    for (const m of sorted.slice(TOP_PER_EXCHANGE)) {
+      if (prioritySymbols.has(m.symbol) && !topSet.has(m.symbol)) {
+        top.push(m);
+        if (top.length >= TOP_PER_EXCHANGE + 10) break;
+      }
+    }
+  }
+  return top;
 }
 
 async function loadCandles(meta: CoinMeta) {
@@ -126,26 +144,37 @@ async function loadCandles(meta: CoinMeta) {
   return parseKlines(raw, meta.exchange === "BINANCE");
 }
 
-async function loadBookRatio(meta: CoinMeta): Promise<number | null> {
+async function loadBookInfo(meta: CoinMeta): Promise<{ bookRatio: number | null; askWallPrice: number | null }> {
   const urls =
     meta.exchange === "BINANCE"
       ? BINANCE_HOSTS.map((h) => `${h}/api/v3/depth?symbol=${meta.symbol}&limit=100`)
       : [`${MEXC_HOST}/api/v3/depth?symbol=${meta.symbol}&limit=100`];
   const depth = await fetchJson<RawDepth>(urls, 5000);
-  if (!depth?.bids || !depth.asks) return null;
-  return computeBookRatio(depth.bids, depth.asks, meta.price);
+  if (!depth?.bids || !depth.asks) return { bookRatio: null, askWallPrice: null };
+  return computeBookMetrics(depth.bids, depth.asks, meta.price);
 }
 
 async function buildSnapshot(): Promise<CacheEntry> {
   const [binanceRaw, mexcRaw, fundingRaw] = await Promise.all([
     fetchJson<RawTicker[]>(BINANCE_HOSTS.map((h) => `${h}/api/v3/ticker/24hr`), 8000),
     fetchJson<RawTicker[]>([`${MEXC_HOST}/api/v3/ticker/24hr`], 8000),
-    fetchJson<RawFunding[]>([FUTURES_URL], 5000),
+    fetchJson<RawFunding[]>(FUTURES_URLS, 5000),
   ]);
 
-  const binanceMetas = toMetas(binanceRaw, "BINANCE");
+  const fundingMap = new Map<string, number>();
+  const negFundingPriority = new Set<string>(["BTCUSDT"]);
+  if (fundingRaw) {
+    for (const f of fundingRaw) {
+      const rate = Number(f.lastFundingRate);
+      if (Number.isFinite(rate)) {
+        fundingMap.set(f.symbol, rate);
+        if (rate <= -0.00015) negFundingPriority.add(f.symbol);
+      }
+    }
+  }
+
+  const binanceMetas = toMetas(binanceRaw, "BINANCE", negFundingPriority);
   const binanceSymbols = new Set(binanceMetas.map((m) => m.symbol));
-  // Aynı coin iki borsada varsa Binance'i tercih et
   const mexcMetas = toMetas(mexcRaw, "MEXC").filter((m) => !binanceSymbols.has(m.symbol));
   const metas = [...binanceMetas, ...mexcMetas];
 
@@ -159,25 +188,25 @@ async function buildSnapshot(): Promise<CacheEntry> {
     }
   }
 
-  const fundingMap = new Map<string, number>();
-  if (fundingRaw) {
-    for (const f of fundingRaw) {
-      const rate = Number(f.lastFundingRate);
-      if (Number.isFinite(rate)) fundingMap.set(f.symbol, rate);
-    }
-  }
-
   // 1. geçiş: mumlar + ön skor
   const prelim = await mapPool(metas, 12, async (meta) => {
     const candles = await loadCandles(meta);
-    return { meta, candles, coin: buildRadarCoin(meta, candles, { funding: fundingMap.get(meta.symbol) ?? null }) };
+    return {
+      meta,
+      candles,
+      coin: buildRadarCoin(meta, candles, { funding: fundingMap.get(meta.symbol) ?? null }),
+    };
   });
+
+  // BTC Tehlike Kalkanı hesapla
+  const btcEntry = prelim.find((p) => p.meta.symbol === "BTCUSDT");
+  const btcShield = btcEntry ? computeBtcShield(btcEntry.meta, btcEntry.candles) : null;
 
   const valid = prelim.filter(
     (p): p is { meta: CoinMeta; candles: Candle[]; coin: RadarCoin } => p.coin !== null
   );
 
-  // 2. geçiş: en iyi adaylar için emir defteri
+  // 2. geçiş: en iyi adaylar için emir defteri + satış duvarı (Ask Wall) analizi
   const top = [...valid]
     .filter((p) => !p.coin.late)
     .sort((a, b) => b.coin.score - a.coin.score)
@@ -185,9 +214,10 @@ async function buildSnapshot(): Promise<CacheEntry> {
 
   const refined = new Map<string, RadarCoin>();
   await mapPool(top, 6, async (p) => {
-    const bookRatio = await loadBookRatio(p.meta);
+    const { bookRatio, askWallPrice } = await loadBookInfo(p.meta);
     const coin = buildRadarCoin(p.meta, p.candles, {
       bookRatio,
+      askWallPrice,
       funding: fundingMap.get(p.meta.symbol) ?? null,
     });
     if (coin) refined.set(coin.id, coin);
@@ -195,8 +225,9 @@ async function buildSnapshot(): Promise<CacheEntry> {
 
   const all = valid.map((p) => refined.get(p.coin.id) ?? p.coin);
   const lateCount = all.filter((c) => c.late).length;
+  const trapCount = all.filter((c) => !c.late && c.isBullTrap).length;
   const coins = all
-    .filter((c) => !c.late && c.score >= MIN_LIST_SCORE)
+    .filter((c) => !c.late && (c.score >= MIN_LIST_SCORE || c.isShortSqueeze || c.isMicroBurst || c.isBullTrap))
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_LIST);
 
@@ -204,6 +235,7 @@ async function buildSnapshot(): Promise<CacheEntry> {
     generatedAt: Date.now(),
     scanned: all.length,
     lateCount,
+    trapCount,
     coins,
     prices: {},
     sources: {
@@ -211,6 +243,7 @@ async function buildSnapshot(): Promise<CacheEntry> {
       mexc: mexcRaw !== null,
       futures: fundingRaw !== null,
     },
+    btcShield,
   };
   return { at: Date.now(), payload, prices };
 }
@@ -220,7 +253,6 @@ async function getSnapshot(): Promise<CacheEntry> {
   if (!inflight) {
     inflight = buildSnapshot()
       .then((entry) => {
-        // Hiçbir kaynak yanıt vermediyse eski cache'i bozma
         if (!entry.payload.sources.binance && !entry.payload.sources.mexc && cache) return cache;
         cache = entry;
         return entry;
