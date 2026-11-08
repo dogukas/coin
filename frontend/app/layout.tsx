@@ -4,9 +4,19 @@ import "./globals.css";
 import ClientProviders from "@/components/ClientProviders";
 
 export const metadata: Metadata = {
-  title: "Crypto Signal Dashboard | Gerçek Zamanlı Analiz",
+  title: "Crypto Signal Dashboard | Pump Radar & Canlı Analiz",
   description:
-    "Canlı kripto para analizi ve sinyal motoru — RSI, MACD, EMA, Bollinger Bantları ile teknik analiz ve akıllı al/sat sinyalleri.",
+    "Canlı kripto para analizi, Pump Radar erken birikim tarayıcısı ve anlık mobil/masaüstü sinyal bildirimleri.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Pump Radar",
+  },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/icon-192.png",
+  },
 };
 
 export default function RootLayout({

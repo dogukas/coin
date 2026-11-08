@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { useDashboardStore } from "@/lib/store";
 import { getSignalLevel } from "@/lib/utils";
+import { ensureServiceWorker } from "@/lib/radarNotify";
 
 const PumpAlerts = dynamic(
   () => import("@/components/dashboard/PumpAlerts"),
@@ -38,6 +39,10 @@ function ThemeController() {
 }
 
 export default function ClientProviders() {
+  useEffect(() => {
+    void ensureServiceWorker();
+  }, []);
+
   return (
     <>
       <ThemeController />

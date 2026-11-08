@@ -26,6 +26,12 @@ import {
   BellOff,
   Activity,
   Send,
+  Smartphone,
+  Download,
+  Sun,
+  Home,
+  LayoutGrid,
+  Coins,
 } from "lucide-react";
 import { useDashboardStore } from "@/lib/store";
 import type { RadarCoin, RadarPayload, ScoreBreakdown } from "@/lib/pumpRadar";
@@ -54,11 +60,20 @@ import {
   type RadarEvent,
 } from "@/lib/radarEvents";
 import {
+  detectMobilePlatform,
   enableNotifications,
+  ensureServiceWorker,
   getNotifyPermission,
+  requestScreenWakeLock,
   showSystemNotification,
+  type MobilePlatformInfo,
   type NotifyPermission,
 } from "@/lib/radarNotify";
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
 
 const REFRESH_MS = 60_000;
 const THRESHOLDS = [60, 70, 80] as const;
@@ -383,12 +398,26 @@ export default function RadarPage() {
   const [threshold, setThreshold] = useState<number>(70);
   const [soundOn, setSoundOn] = useState(false);
   const [notifyPerm, setNotifyPerm] = useState<NotifyPermission>("default");
+  const [platform, setPlatform] = useState<MobilePlatformInfo>({
+    isMobile: false,
+    isIOS: false,
+    isAndroid: false,
+    isStandalone: false,
+    needsIOSInstall: false,
+    wakeLockSupported: false,
+  });
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showMobileGuide, setShowMobileGuide] = useState(false);
+  const [wakeLockOn, setWakeLockOn] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   const thresholdRef = useRef(threshold);
   const soundRef = useRef(soundOn);
   const audioRef = useRef<AudioContext | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const wakeLockWantedRef = useRef(false);
+  const lastScanTsRef = useRef<number>(0);
   const prevScoresRef = useRef<Record<string, number>>({});
   const sourcesOkRef = useRef<boolean>(true);
   const initializedScanRef = useRef<boolean>(false);
@@ -555,6 +584,7 @@ export default function RadarPage() {
       setHistory(nextHistory);
       setData(payload);
       setNow(ts);
+      lastScanTsRef.current = ts;
       setError(null);
     } catch (err) {
       if ((err as Error)?.name === "AbortError") return;
@@ -564,18 +594,42 @@ export default function RadarPage() {
     }
   }, [dispatchNotifications]);
 
-  // Kayıtlı ayarları yükle + 60 sn'lik tarama döngüsü
+  // Kayıtlı ayarları yükle + 60 sn'lik tarama döngüsü + mobil olay dinleyicileri
   useEffect(() => {
+    void ensureServiceWorker();
     const savedThreshold = Number(window.localStorage.getItem("radar-threshold"));
     const initialThreshold = THRESHOLDS.includes(savedThreshold as (typeof THRESHOLDS)[number])
       ? savedThreshold
       : 70;
     thresholdRef.current = initialThreshold;
 
+    setPlatform(detectMobilePlatform());
     setNotifyPerm(getNotifyPermission());
     setEvents(loadEvents());
     setHistory(loadHistory());
     if (initialThreshold !== 70) setThreshold(initialThreshold);
+
+    const onBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+
+    // Mobil ekran kilidi açıldığında veya sekmeye dönüldüğünde hemen kontrol et ve Wake Lock'u yenile
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        setNotifyPerm(getNotifyPermission());
+        if (Date.now() - lastScanTsRef.current > 30_000) {
+          void refresh();
+        }
+        if (wakeLockWantedRef.current && !wakeLockRef.current) {
+          void requestScreenWakeLock().then((wl) => {
+            wakeLockRef.current = wl;
+          });
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     void refresh();
     const interval = setInterval(() => void refresh(), REFRESH_MS);
@@ -584,6 +638,9 @@ export default function RadarPage() {
       clearInterval(interval);
       clearInterval(tick);
       abortRef.current?.abort();
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      document.removeEventListener("visibilitychange", onVisibility);
+      void wakeLockRef.current?.release();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -601,18 +658,61 @@ export default function RadarPage() {
     }
   };
 
+  const toggleWakeLock = async () => {
+    if (wakeLockOn) {
+      wakeLockWantedRef.current = false;
+      await wakeLockRef.current?.release();
+      wakeLockRef.current = null;
+      setWakeLockOn(false);
+      toast("Ekran kilidi koruması kapatıldı");
+      return;
+    }
+    const wl = await requestScreenWakeLock();
+    if (wl) {
+      wakeLockRef.current = wl;
+      wakeLockWantedRef.current = true;
+      setWakeLockOn(true);
+      wl.addEventListener("release", () => {
+        wakeLockRef.current = null;
+      });
+      toast.success("📱 Ekran açık tutma aktif — telefonunuz tarama sırasında uykuya geçmeyecek");
+    } else {
+      toast.error("Cihazınız ekran açık tutma özelliğini desteklemiyor.");
+    }
+  };
+
+  const handleInstallApp = async () => {
+    if (installPrompt) {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === "accepted") {
+        setInstallPrompt(null);
+        toast.success("📲 Uygulama telefonunuza eklendi!");
+      }
+      return;
+    }
+    setShowMobileGuide((v) => !v);
+  };
+
   const handleEnableNotifications = async () => {
+    if (notifyPerm === "ios-install-needed") {
+      setShowMobileGuide(true);
+      toast.warning("iPhone'da bildirim almak için önce siteyi Ana Ekrana eklemelisiniz.");
+      return;
+    }
     const perm = await enableNotifications();
     setNotifyPerm(perm);
     if (perm === "granted") {
       await showSystemNotification(
-        "🔔 Pump Radar Bildirimleri Aktif",
+        "🔔 Pump Radar Mobil & Masaüstü Bildirimleri Aktif",
         "Eşik üstü yeni coinler, +%3/+%5/+%10 yükselişler ve hedef/stop hareketleri anında bildirilecek.",
         "radar-welcome"
       );
-      toast.success("Masaüstü bildirimleri etkinleştirildi!");
+      toast.success("Bildirimler etkinleştirildi!");
     } else if (perm === "denied") {
-      toast.error("Tarayıcı bildirim izni reddedildi. Adres çubuğundaki kilit simgesinden açabilirsiniz.");
+      toast.error("Tarayıcı bildirim izni reddedildi. Adres çubuğundaki site ayarlarından açabilirsiniz.");
+    } else if (perm === "unsupported") {
+      setShowMobileGuide(true);
     }
   };
 
@@ -704,11 +804,11 @@ export default function RadarPage() {
             ))}
           </div>
 
-          {/* Masaüstü Bildirim Butonu */}
+          {/* Mobil & Masaüstü Bildirim Butonu */}
           {notifyPerm === "granted" ? (
             <span
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold"
-              title="Masaüstü bildirimleri açık"
+              title="Mobil ve masaüstü bildirimleri açık"
             >
               <BellRing size={13} />
               <span className="hidden sm:inline">Bildirim Açık</span>
@@ -721,14 +821,51 @@ export default function RadarPage() {
               <BellOff size={13} />
               <span className="hidden sm:inline">İzin Engelli</span>
             </span>
+          ) : notifyPerm === "ios-install-needed" ? (
+            <button
+              onClick={() => setShowMobileGuide((v) => !v)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 text-xs font-semibold transition-colors"
+              title="iPhone'da bildirim almak için Ana Ekrana Ekle"
+            >
+              <Smartphone size={13} />
+              <span>iPhone Bildirim Kurulumu</span>
+            </button>
           ) : (
             <button
               onClick={() => void handleEnableNotifications()}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 text-xs font-semibold transition-colors"
-              title="Tarayıcı masaüstü bildirimlerini etkinleştir"
+              title="Mobil ve masaüstü bildirimlerini etkinleştir"
             >
               <Bell size={13} />
               <span>Bildirimleri Aç</span>
+            </button>
+          )}
+
+          {/* Ekranı Açık Tut (Mobil Wake Lock) */}
+          {platform.wakeLockSupported && (
+            <button
+              onClick={() => void toggleWakeLock()}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                wakeLockOn
+                  ? "bg-cyan-500/20 border border-cyan-500/30 text-cyan-300"
+                  : "bg-white/5 text-gray-400 hover:text-white"
+              }`}
+              title="Telefon ekranının kapanmasını engeller"
+            >
+              <Sun size={13} />
+              <span className="hidden md:inline">{wakeLockOn ? "Ekran Açık" : "Uyanık Tut"}</span>
+            </button>
+          )}
+
+          {/* Telefona Uygulama Olarak Yükle / Mobil Rehber */}
+          {(installPrompt || !platform.isStandalone) && (
+            <button
+              onClick={() => void handleInstallApp()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-gray-300 transition-colors"
+              title="Telefon ana ekranına uygulama olarak yükle"
+            >
+              <Download size={12} />
+              <span className="hidden sm:inline">{installPrompt ? "Uygulamayı Yükle" : "Mobil Kurulum"}</span>
             </button>
           )}
 
@@ -768,7 +905,59 @@ export default function RadarPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 md:px-6 py-5 flex flex-col gap-5">
+      <main className="max-w-5xl mx-auto px-4 md:px-6 py-5 pb-20 sm:pb-6 flex flex-col gap-5">
+        {/* Mobil Bildirim & Kurulum Rehberi Kartı */}
+        {(showMobileGuide || notifyPerm === "ios-install-needed" || (platform.isMobile && notifyPerm === "default")) && (
+          <section className="rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-950/30 via-[#0d0e12] to-[#0d0e12] p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+                <Smartphone size={15} />
+                <span>TELEFONDA CANLI BİLDİRİM ALMA REHBERİ (ANDROID & iPHONE)</span>
+              </div>
+              {showMobileGuide && (
+                <button
+                  onClick={() => setShowMobileGuide(false)}
+                  className="text-[11px] text-gray-400 hover:text-white"
+                >
+                  Kapat ✕
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-300">
+              <div className="rounded-xl bg-black/40 border border-white/5 p-3 flex flex-col gap-1.5">
+                <span className="font-bold text-emerald-300">🤖 Android (Chrome / Samsung / Edge)</span>
+                <p className="text-[11px] text-gray-300 leading-relaxed">
+                  1. Yukarıdaki <b>&quot;Bildirimleri Aç&quot;</b> butonuna dokunun ve çıkan izne <b>İzin Ver</b> deyin.
+                  <br />
+                  2. İsterseniz <b>&quot;Uygulamayı Yükle&quot;</b> (veya tarayıcı menüsünden <i>Ana ekrana ekle</i>) ile tam ekran uygulama gibi kullanın; bildirimler titreşimli olarak düşer.
+                </p>
+                {notifyPerm === "default" && (
+                  <button
+                    onClick={() => void handleEnableNotifications()}
+                    className="mt-1 self-start px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-bold text-[11px]"
+                  >
+                    🔔 Şimdi Bildirim İznini Aç
+                  </button>
+                )}
+              </div>
+
+              <div className="rounded-xl bg-black/40 border border-white/5 p-3 flex flex-col gap-1.5">
+                <span className="font-bold text-sky-300">🍏 iPhone / iPad (Safari iOS 16.4+)</span>
+                <p className="text-[11px] text-gray-300 leading-relaxed">
+                  Apple güvenlik kuralı gereği Safari&apos;de web bildirimleri yalnızca site Ana Ekrana eklendiğinde çalışır:
+                  <br />
+                  1. Safari alt barındaki <b>Paylaş (⬆️)</b> simgesine dokunun.
+                  <br />
+                  2. <b>&quot;Ana Ekrana Ekle&quot;</b> seçeneğine basın.
+                  <br />
+                  3. Ana ekranınıza gelen <b>Pump Radar</b> ikonundan uygulamayı açıp <b>&quot;Bildirimleri Aç&quot;</b> butonuna dokunun.
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Canlı Olan Biten Şeridi */}
         <section className="rounded-2xl border border-white/10 bg-[#0d0e12] p-3.5 flex flex-col gap-2.5">
           <div className="flex items-center justify-between">
@@ -954,6 +1143,26 @@ export default function RadarPage() {
           </p>
         )}
       </main>
+
+      {/* Mobil Alt Navigasyon Barı */}
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 flex items-center justify-around py-2 px-1 safe-area-bottom">
+        <Link href="/" className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-white transition-colors">
+          <Home size={18} />
+          <span className="text-[9px] font-semibold">Ana Sayfa</span>
+        </Link>
+        <div className="flex flex-col items-center gap-0.5 text-emerald-400">
+          <Radar size={18} />
+          <span className="text-[9px] font-semibold">Pump Radar</span>
+        </div>
+        <Link href="/screener" className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-white transition-colors">
+          <LayoutGrid size={18} />
+          <span className="text-[9px] font-semibold">Küp Ekran</span>
+        </Link>
+        <Link href="/mexc" className="flex flex-col items-center gap-0.5 text-gray-400 hover:text-white transition-colors">
+          <Coins size={18} />
+          <span className="text-[9px] font-semibold">MEXC</span>
+        </Link>
+      </nav>
     </div>
   );
 }
