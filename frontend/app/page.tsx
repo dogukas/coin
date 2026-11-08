@@ -6,7 +6,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import dynamic from "next/dynamic";
 import { useDashboardStore } from "@/lib/store";
-import { WSManager } from "@/lib/utils";
+import { WSManager, formatPrice, formatVolume } from "@/lib/utils";
 import type { WSMessage, CandleData } from "@/lib/utils";
 import { buildSignalPayloadFromCandles } from "@/lib/indicators";
 import SignalCard from "@/components/dashboard/SignalCard";
@@ -35,6 +35,11 @@ import {
   Sparkles,
   Star,
   ShieldCheck,
+  Maximize2,
+  Minimize2,
+  ArrowUpDown,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 
 import GlobalMarketPanel from "@/components/dashboard/GlobalMarketPanel";
@@ -93,6 +98,8 @@ export default function DashboardPage() {
   const [asideTab, setAsideTab] = useState<"trade" | "flow" | "ai">("trade");
   const [flowSubTab, setFlowSubTab] = useState<"trades" | "whales" | "liquidations">("trades");
   const [directWsConnected, setDirectWsConnected] = useState(false);
+  const [chartFirst, setChartFirst] = useState(true);
+  const [chartExpanded, setChartExpanded] = useState(false);
 
   const wsManagerRef = useRef<WSManager | null>(null);
 
@@ -106,6 +113,8 @@ export default function DashboardPage() {
     if (savedSidebar !== null) setSidebarOpen(savedSidebar === "true");
     const savedWhale = localStorage.getItem("whale-threshold");
     if (savedWhale !== null) setWhaleThreshold(Number(savedWhale));
+    const savedLayout = localStorage.getItem("chart-first-layout");
+    if (savedLayout !== null) setChartFirst(savedLayout === "true");
   }, []);
 
   // Persist sidebar state
@@ -117,6 +126,11 @@ export default function DashboardPage() {
   useEffect(() => {
     if (mounted) localStorage.setItem("whale-threshold", String(whaleThreshold));
   }, [whaleThreshold, mounted]);
+
+  // Persist layout mode
+  useEffect(() => {
+    if (mounted) localStorage.setItem("chart-first-layout", String(chartFirst));
+  }, [chartFirst, mounted]);
 
   // Handle incoming WebSocket messages
   const handleMessage = useCallback(
@@ -454,42 +468,57 @@ export default function DashboardPage() {
       </header>
 
       {/* ── Main Content (Layout) ── */}
-      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto overflow-x-hidden p-3 md:p-4 gap-4">
-        {/* Left: Coin Browser Sidebar */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto overflow-x-hidden p-3 md:p-4 gap-4 items-start">
+        {/* Left: Coin Browser Sidebar (Sticky Docked on Desktop) */}
         <div
           className={`
             bg-[var(--card)] border border-[var(--line)] rounded-[18px] flex-shrink-0
             transition-all duration-300 overflow-hidden
-            ${sidebarOpen ? "h-[300px] lg:h-auto lg:w-[280px]" : "hidden"}
+            ${
+              sidebarOpen && !chartExpanded
+                ? "w-full h-[320px] lg:w-[280px] lg:h-[calc(100vh-84px)] lg:sticky lg:top-[68px]"
+                : "hidden"
+            }
           `}
         >
           <CoinBrowser />
         </div>
 
         {/* Center/Right Layout Area */}
-        <div className="flex-1 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4 min-w-0">
-          
+        <div
+          className={`flex-1 w-full grid grid-cols-1 ${
+            chartExpanded ? "" : "xl:grid-cols-[minmax(0,1fr)_330px]"
+          } gap-4 min-w-0 items-start`}
+        >
           {/* Main Panel (.main equivalent) */}
           <main className="flex flex-col gap-4 min-w-0">
-            {/* Global Market Panel (.row3 equivalent) */}
-            <GlobalMarketPanel />
-            
-            {/* Indicator Grid (.ind equivalent) */}
-            <IndicatorGrid />
+            {/* Aktif Coin Canlı Terminal Şeridi (Fiyat Flash + 24s Menzil + Sinyal) */}
+            <ActiveCoinHeroStrip
+              symbol={activeSymbol}
+              isFavorite={favoriteSymbols.includes(activeSymbol)}
+              onToggleFavorite={() => toggleFavoriteSymbol(activeSymbol)}
+            />
+
+            {!chartFirst && !chartExpanded && (
+              <>
+                <GlobalMarketPanel />
+                <IndicatorGrid />
+              </>
+            )}
 
             {/* Chart Box */}
-            <div className="bg-gradient-to-br from-[var(--card-2)] to-[var(--card)] border border-[var(--line)] rounded-[18px] flex flex-col min-w-0">
+            <div className="bg-gradient-to-br from-[var(--card-2)] to-[var(--card)] border border-[var(--line)] rounded-[18px] flex flex-col min-w-0 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
               <div className="flex flex-wrap items-center justify-between px-4 py-3 border-b border-[var(--line)] gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[13px] font-bold text-[var(--ink)] tracking-[0.04em]">
                     {activeSymbol.replace("USDT", "")}
                   </span>
                   <span className="text-[10px] text-[var(--ink-faint)] bg-white/5 border border-[var(--line)] px-2 py-0.5 rounded-[7px]">/USDT</span>
                   
-                  <div className="flex bg-black/20 rounded-lg p-0.5 ml-2 border border-[var(--line)] overflow-x-auto">
+                  <div className="flex bg-black/20 rounded-lg p-0.5 ml-1 border border-[var(--line)] overflow-x-auto">
                     <button
                       onClick={() => setChartTab("price")}
-                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
                         chartTab === "price" ? "bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow-sm" : "text-[var(--ink-dim)] hover:text-[var(--ink)]"
                       }`}
                     >
@@ -497,7 +526,7 @@ export default function DashboardPage() {
                     </button>
                     <button
                       onClick={() => setChartTab("depth")}
-                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
                         chartTab === "depth" ? "bg-[var(--gain)]/20 text-[var(--gain)] border border-[var(--gain)]/30 shadow-sm" : "text-[var(--ink-dim)] hover:text-[var(--ink)]"
                       }`}
                     >
@@ -505,7 +534,7 @@ export default function DashboardPage() {
                     </button>
                     <button
                       onClick={() => setChartTab("orderbook")}
-                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
                         chartTab === "orderbook" ? "bg-violet-500/20 text-violet-400 border border-violet-500/30 shadow-sm" : "text-[var(--ink-dim)] hover:text-[var(--ink)]"
                       }`}
                     >
@@ -513,7 +542,7 @@ export default function DashboardPage() {
                     </button>
                     <button
                       onClick={() => setChartTab("radar")}
-                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                      className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
                         chartTab === "radar" ? "bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-sm" : "text-[var(--ink-dim)] hover:text-[var(--ink)]"
                       }`}
                     >
@@ -523,12 +552,12 @@ export default function DashboardPage() {
 
                   {/* Interval Selector */}
                   {chartTab === "price" && (
-                    <div className="flex bg-black/20 rounded-lg p-0.5 ml-2 border border-[var(--line)] overflow-x-auto">
+                    <div className="flex bg-black/20 rounded-lg p-0.5 ml-1 border border-[var(--line)] overflow-x-auto">
                       {["1m", "5m", "15m", "1h", "4h"].map((int) => (
                         <button
                           key={int}
                           onClick={() => setInterval(int)}
-                          className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap ${
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
                             activeInterval === int
                               ? "bg-white/10 text-[var(--ink)] border border-[var(--line)] shadow-sm"
                               : "text-[var(--ink-dim)] hover:text-[var(--ink)] hover:bg-white/5"
@@ -540,20 +569,53 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--gain)]" />
-                  <span className="text-[9px] md:text-[10px] text-[var(--ink-dim)] hidden sm:block font-mono">
-                    {chartTab === "orderbook"
-                      ? "Binance L2 Depth"
-                      : chartTab === "radar"
-                      ? "Binance vs MEXC Arbitraj"
-                      : chartTab === "depth"
-                      ? "Kümülatif Derinlik"
-                      : "TradingView Charts"}
-                  </span>
+
+                <div className="flex items-center gap-2">
+                  {/* Düzen Seçici: Grafik Üstte / Kartlar Üstte */}
+                  <button
+                    type="button"
+                    onClick={() => setChartFirst((v) => !v)}
+                    title={
+                      chartFirst
+                        ? "İndikatör kartlarını grafiğin üstüne taşı"
+                        : "Grafiği en üste taşı (Pro Terminal düzeni)"
+                    }
+                    className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-[10px] font-semibold text-gray-300 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <ArrowUpDown size={11} className="text-emerald-400" />
+                    <span>{chartFirst ? "Grafik Üstte" : "Kartlar Üstte"}</span>
+                  </button>
+
+                  {/* Tam Genişlik / Büyüt Butonu */}
+                  <button
+                    type="button"
+                    onClick={() => setChartExpanded((v) => !v)}
+                    title={chartExpanded ? "Normal görünüme dön" : "Grafiği tam genişlik büyüt"}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-semibold transition-colors cursor-pointer ${
+                      chartExpanded
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                        : "bg-white/[0.04] hover:bg-white/[0.08] text-gray-300 hover:text-white border-white/10"
+                    }`}
+                  >
+                    {chartExpanded ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+                    <span className="hidden sm:inline">{chartExpanded ? "Küçült" : "Büyüt"}</span>
+                  </button>
+
+                  <div className="hidden md:flex items-center gap-1.5 pl-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--gain)]" />
+                    <span className="text-[9px] md:text-[10px] text-[var(--ink-dim)] font-mono">
+                      {chartTab === "orderbook"
+                        ? "Binance L2 Depth"
+                        : chartTab === "radar"
+                        ? "Binance vs MEXC Arbitraj"
+                        : chartTab === "depth"
+                        ? "Kümülatif Derinlik"
+                        : "TradingView Charts"}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <div className="w-full h-[400px] lg:h-[500px]">
+              <div className={`w-full transition-all duration-300 ${chartExpanded ? "h-[580px] lg:h-[680px]" : "h-[420px] lg:h-[510px]"}`}>
                 {chartTab === "price" ? (
                   <ChartErrorBoundary>
                     <CandlestickChart />
@@ -571,10 +633,21 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
+
+            {chartFirst && (
+              <>
+                {/* Indicator Grid (.ind equivalent) */}
+                <IndicatorGrid />
+
+                {/* Global Market Panel (.row3 equivalent) */}
+                <GlobalMarketPanel />
+              </>
+            )}
           </main>
 
           {/* Aside Panel (.aside equivalent) */}
-          <aside className="flex flex-col gap-3 min-w-0">
+          {!chartExpanded && (
+          <aside className="flex flex-col gap-3 min-w-0 lg:sticky lg:top-[68px]">
             {/* Aside Navigation Bar */}
             <div className="flex bg-[#0b0e14] border border-[var(--line)] rounded-xl p-1 gap-1 shadow-inner">
               <button
@@ -671,6 +744,7 @@ export default function DashboardPage() {
               </div>
             )}
           </aside>
+          )}
 
         </div>
       </div>
@@ -690,6 +764,210 @@ export default function DashboardPage() {
           <span className="text-[9px] font-semibold">Küp Ekran</span>
         </Link>
       </nav>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Active Coin Live Terminal Hero Strip (Price Flash + 24h Range + Signal Pill)
+// ──────────────────────────────────────────────
+
+interface Ticker24hStats {
+  price: number;
+  changePct: number;
+  high24h: number;
+  low24h: number;
+  quoteVol24h: number;
+}
+
+function ActiveCoinHeroStrip({
+  symbol,
+  isFavorite,
+  onToggleFavorite,
+}: {
+  symbol: string;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+}) {
+  const signalData = useDashboardStore((s) => s.signalData);
+  const candles = useDashboardStore((s) => s.candles);
+
+  const [stats, setStats] = useState<Ticker24hStats | null>(null);
+  const [flashDir, setFlashDir] = useState<"up" | "down" | null>(null);
+  const prevPriceRef = useRef<number>(0);
+
+  // Canlı 24s istatistikleri çek
+  useEffect(() => {
+    let cancelled = false;
+    setStats(null);
+    prevPriceRef.current = 0;
+
+    const load24h = async () => {
+      const endpoints = [
+        `https://data-api.binance.vision/api/v3/ticker/24hr?symbol=${symbol}`,
+        `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`,
+      ];
+      for (const url of endpoints) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const d = (await res.json()) as {
+            lastPrice: string;
+            priceChangePercent: string;
+            highPrice: string;
+            lowPrice: string;
+            quoteVolume: string;
+          };
+          if (cancelled || !d.lastPrice) continue;
+          setStats({
+            price: parseFloat(d.lastPrice) || 0,
+            changePct: parseFloat(d.priceChangePercent) || 0,
+            high24h: parseFloat(d.highPrice) || 0,
+            low24h: parseFloat(d.lowPrice) || 0,
+            quoteVol24h: parseFloat(d.quoteVolume) || 0,
+          });
+          break;
+        } catch {
+          // try next
+        }
+      }
+    };
+
+    load24h();
+    const timer = window.setInterval(load24h, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [symbol]);
+
+  const livePrice =
+    signalData?.price ||
+    (candles.length > 0 ? candles[candles.length - 1].close : 0) ||
+    stats?.price ||
+    0;
+
+  // Fiyat değişiminde yeşil/kırmızı flash geri bildirimi
+  useEffect(() => {
+    if (livePrice <= 0) return;
+    if (prevPriceRef.current > 0 && livePrice !== prevPriceRef.current) {
+      setFlashDir(livePrice > prevPriceRef.current ? "up" : "down");
+      const t = window.setTimeout(() => setFlashDir(null), 650);
+      prevPriceRef.current = livePrice;
+      return () => window.clearTimeout(t);
+    }
+    prevPriceRef.current = livePrice;
+  }, [livePrice]);
+
+  const base = symbol.replace("USDT", "");
+  const changePct = stats?.changePct ?? 0;
+  const isUp = changePct >= 0;
+  const low = stats?.low24h || livePrice * 0.97;
+  const high = stats?.high24h || livePrice * 1.03;
+  const rangePos =
+    high > low ? Math.min(100, Math.max(0, ((livePrice - low) / (high - low)) * 100)) : 50;
+
+  const score = signalData?.score ?? 50;
+  const label = signalData?.label ?? "BEKLENİYOR";
+
+  return (
+    <div className="bg-gradient-to-r from-[#0d0e12] via-[#12151f] to-[#0d0e12] border border-[var(--line)] rounded-[18px] px-4 py-3 flex flex-wrap items-center justify-between gap-4 shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
+      {/* Sol: Coin Adı + Canlı Flash Fiyat + 24s Değişim */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggleFavorite}
+            title={isFavorite ? "Favorilerden çıkar" : "Favorilere ekle"}
+            className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 transition-colors cursor-pointer"
+          >
+            <Star
+              size={14}
+              className={isFavorite ? "text-amber-400 fill-amber-400" : "text-gray-500 hover:text-gray-300"}
+            />
+          </button>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-base font-black tracking-tight text-white">{base}</span>
+              <span className="text-[10px] font-mono text-gray-400 px-1.5 py-0.5 rounded bg-white/5 border border-white/10">
+                /USDT
+              </span>
+            </div>
+            <span className="text-[10px] text-gray-500 font-mono">Binance Spot Canlı Akış</span>
+          </div>
+        </div>
+
+        {/* Canlı Fiyat (Flash Efektli) */}
+        <div
+          className={`px-3 py-1.5 rounded-xl border transition-colors ${
+            flashDir === "up"
+              ? "flash-up border-emerald-500/50 text-emerald-300"
+              : flashDir === "down"
+              ? "flash-down border-rose-500/50 text-rose-300"
+              : "border-white/5 bg-black/25 text-white"
+          }`}
+        >
+          <div className="text-[10px] text-gray-400 font-sans uppercase tracking-wider leading-none mb-0.5">
+            Anlık Fiyat
+          </div>
+          <div className="font-mono text-xl md:text-2xl font-bold tabular-nums leading-tight flex items-center gap-1.5">
+            <span>${livePrice > 0 ? formatPrice(livePrice) : "—"}</span>
+            {stats && (
+              <span
+                className={`inline-flex items-center gap-0.5 text-xs font-bold px-2 py-0.5 rounded-md border ${
+                  isUp
+                    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                    : "bg-rose-500/15 text-rose-400 border-rose-500/30"
+                }`}
+              >
+                {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                {isUp ? "+" : ""}
+                {changePct.toFixed(2)}%
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Orta: 24s Dip / Tavan Menzil Barı & 24s Hacim */}
+      {stats && (
+        <div className="hidden md:flex items-center gap-5 text-xs font-mono">
+          <div className="flex flex-col gap-1 min-w-[180px]">
+            <div className="flex justify-between text-[10px] text-gray-400">
+              <span>24s Dip: <b className="text-gray-200">${formatPrice(stats.low24h)}</b></span>
+              <span>24s Tavan: <b className="text-gray-200">${formatPrice(stats.high24h)}</b></span>
+            </div>
+            <div className="relative h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400"
+                style={{ width: `${rangePos}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="pl-4 border-l border-white/10">
+            <span className="text-[10px] text-gray-400 font-sans uppercase block">24s Hacim (USDT)</span>
+            <span className="text-sm font-bold text-white tabular-nums">${formatVolume(stats.quoteVol24h)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Sağ: Anlık Sinyal Puanı & Yön Özeti */}
+      <div className="flex items-center gap-2.5 ml-auto sm:ml-0">
+        <div
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border font-mono text-xs font-bold ${
+            score >= 60
+              ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/35"
+              : score < 40
+              ? "bg-rose-500/15 text-rose-300 border-rose-500/35"
+              : "bg-amber-500/15 text-amber-300 border-amber-500/35"
+          }`}
+        >
+          <span className="text-sm font-extrabold">{score}P</span>
+          <span className="text-white/30">•</span>
+          <span className="font-sans uppercase tracking-wider text-[11px]">{label}</span>
+        </div>
+      </div>
     </div>
   );
 }

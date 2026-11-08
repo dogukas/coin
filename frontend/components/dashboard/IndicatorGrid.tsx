@@ -163,8 +163,8 @@ export default function IndicatorGrid() {
     volRatioText = `%${ratio.toFixed(0)}`;
   }
 
-  // Common card classes mapping the new HTML style
-  const cardClass = "min-w-0 bg-gradient-to-br from-[var(--card-2)] to-[var(--card)] border border-[var(--line)] rounded-[18px] p-4 flex flex-col gap-3.5";
+  // Common card classes mapping the Pro Terminal Dark style
+  const cardClass = "min-w-0 bg-gradient-to-br from-[var(--card-2)] to-[var(--card)] border border-[var(--line)] hover:border-white/15 transition-colors duration-200 rounded-[18px] p-4 flex flex-col gap-3 shadow-[0_8px_24px_rgba(0,0,0,0.3)]";
   const chClass = "flex items-center gap-2 min-h-[22px]";
   const h2Class = "m-0 text-[11px] font-bold tracking-[0.12em] uppercase text-[var(--ink-dim)]";
   const vrowClass = "flex items-end justify-between gap-2.5 flex-wrap";

@@ -155,18 +155,35 @@ export default function SignalCard() {
   const negativeCount = reasons.filter(r => r.startsWith("✗")).length;
   const totalCount = positiveCount + negativeCount || 1;
 
-  // Determine color theme based on score (similar to HTML)
+  // Determine color theme based on score (Pro Dark Terminal)
   const isGood = score >= 60;
+  const isNeutral = score >= 40 && score < 60;
   const t = {
-    cardBg: isGood ? "from-[#0d2617] to-[#0a1c12]" : "from-[#260d15] to-[#1c0a10]",
-    line: isGood ? "border-[#20432b]" : "border-[#43202b]",
-    loss: isGood ? "text-[#ff5a6e]" : "text-[#ff3b5c]",
+    cardBg: isGood
+      ? "from-[#0c1a15] to-[#0d0e12]"
+      : isNeutral
+      ? "from-[#12151f] to-[#0d0e12]"
+      : "from-[#1a0d13] to-[#0d0e12]",
+    line: isGood
+      ? "border-emerald-500/25"
+      : isNeutral
+      ? "border-[#1e2230]"
+      : "border-rose-500/25",
+    loss: "text-[#ff5a6e]",
     gain: "text-[#2fd6a1]",
-    trackBg: isGood ? "bg-[#1a2f22]" : "bg-[#3a1a24]",
-    shadow: isGood ? "shadow-[0_30px_60px_-30px_rgba(47,214,161,0.35)]" : "shadow-[0_30px_60px_-30px_rgba(255,59,92,0.35)]",
-    pillBg: isGood ? "bg-[#2fd6a1]/10 border-[#2fd6a1]/40 text-[#2fd6a1]" : "bg-[#ff5a6e]/10 border-[#ff5a6e]/40 text-[#ff5a6e]",
-    mainColor: isGood ? "#2fd6a1" : "#ff5a6e",
-    dirText: isGood ? "Al / Güçlü" : "Sat / Zayıf",
+    trackBg: isGood ? "bg-[#152820]" : isNeutral ? "bg-[#1b2030]" : "bg-[#2a151d]",
+    shadow: isGood
+      ? "shadow-[0_20px_50px_-25px_rgba(47,214,161,0.28)]"
+      : isNeutral
+      ? "shadow-[0_20px_50px_-25px_rgba(0,0,0,0.5)]"
+      : "shadow-[0_20px_50px_-25px_rgba(255,59,92,0.28)]",
+    pillBg: isGood
+      ? "bg-[#2fd6a1]/10 border-[#2fd6a1]/40 text-[#2fd6a1]"
+      : isNeutral
+      ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
+      : "bg-[#ff5a6e]/10 border-[#ff5a6e]/40 text-[#ff5a6e]",
+    mainColor: isGood ? "#2fd6a1" : isNeutral ? "#f5b13d" : "#ff5a6e",
+    dirText: isGood ? "Al / Güçlü" : isNeutral ? "Nötr / Dengeli" : "Sat / Zayıf",
   };
 
   const radius = 44;
@@ -174,24 +191,24 @@ export default function SignalCard() {
   const progress = (score / 100) * circumference;
 
   return (
-    <main className={`@container w-full max-w-[420px] bg-gradient-to-br ${t.cardBg} border ${t.line} rounded-[22px] p-5 flex flex-col gap-5 ${t.shadow} font-sans`}>
+    <main className={`@container w-full max-w-[420px] bg-gradient-to-br ${t.cardBg} border ${t.line} rounded-[20px] p-4 flex flex-col gap-4 ${t.shadow} font-sans`}>
       
       {/* Header */}
       <header className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <h1 className="m-0 text-[14px] tracking-[0.14em] font-bold uppercase text-[#f6e9ec]">Sinyal Durumu</h1>
+          <h1 className="m-0 text-[13px] tracking-[0.14em] font-bold uppercase text-slate-100">Sinyal Durumu</h1>
           <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-white/10 text-emerald-400 font-bold border border-white/5">
             {activeSymbol.replace("USDT", "")}
           </span>
         </div>
-        <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold tracking-[0.1em] uppercase px-3 py-1.5 rounded-full border ${t.pillBg}`}>
+        <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold tracking-[0.1em] uppercase px-3 py-1 rounded-full border ${t.pillBg}`}>
           {label}
         </span>
       </header>
 
       {/* Hero */}
-      <section className="flex items-center gap-5 flex-wrap justify-center @[380px]:justify-start">
-        <div className="relative flex-none w-[124px] h-[124px]">
+      <section className="flex items-center gap-4 flex-wrap justify-center @[380px]:justify-start">
+        <div className="relative flex-none w-[110px] h-[110px]">
           <svg viewBox="0 0 100 100" aria-hidden="true" className="w-full h-full -rotate-90 overflow-visible">
             <circle cx="50" cy="50" r={radius} fill="none" className={`stroke-current ${t.trackBg.replace('bg-', 'text-')}`} strokeWidth="9" />
             <circle 
@@ -202,14 +219,14 @@ export default function SignalCard() {
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <b className="font-mono text-[34px] font-semibold leading-none" style={{ color: t.mainColor }}>{score}</b>
-            <small className="mt-1 text-[10px] tracking-[0.16em] text-[#a98791] uppercase">Puan</small>
+            <b className="font-mono text-[32px] font-semibold leading-none" style={{ color: t.mainColor }}>{score}</b>
+            <small className="mt-1 text-[10px] tracking-[0.16em] text-slate-400 uppercase">Puan</small>
           </div>
         </div>
         
         <div className="min-w-0 flex flex-col gap-1.5 text-center @[380px]:text-left">
-          <div className="font-mono text-[28px] font-semibold tabular-nums tracking-[-0.01em] text-[#f6e9ec]">
-            ${Math.floor(price)}<i className="not-italic text-[#a98791]">.{(price % 1).toFixed(2).substring(2)}</i>
+          <div className="font-mono text-[26px] font-semibold tabular-nums tracking-[-0.01em] text-slate-100">
+            ${Math.floor(price)}<i className="not-italic text-slate-400">.{(price % 1).toFixed(2).substring(2)}</i>
           </div>
           <div className="inline-flex items-center justify-center @[380px]:justify-start gap-1.5 text-[13px] font-bold tracking-[0.06em] uppercase" style={{ color: t.mainColor }}>
             <TrendIcon size={16} strokeWidth={2.4} />

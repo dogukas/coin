@@ -40,11 +40,25 @@ export default function CoinBrowser() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [logoMap, setLogoMap] = useState<Record<string, string>>({});
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   const setSymbol = useDashboardStore((s) => s.setSymbol);
   const favoriteSymbols = useDashboardStore((s) => s.favoriteSymbols);
   const toggleFavoriteSymbol = useDashboardStore((s) => s.toggleFavoriteSymbol);
+
+  // Ctrl+K / Cmd+K klavye kısayolu ile anında coin arama kutusuna odaklan
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // Fetch logo map once
   useEffect(() => {
@@ -231,18 +245,23 @@ export default function CoinBrowser() {
             className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500"
           />
           <input
+            ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Coin ara... (BTC, DOGE, XRP)"
-            className="w-full bg-white/[0.03] border border-white/5 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-gray-600 outline-none focus:border-emerald-500/40 transition-colors"
+            className="w-full bg-white/[0.03] border border-white/5 rounded-lg pl-8 pr-14 py-2 text-xs text-white placeholder-gray-600 outline-none focus:border-emerald-500/40 transition-colors"
           />
-          {isSearching && (
+          {isSearching ? (
             <Loader2
               size={12}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 animate-spin"
             />
-          )}
+          ) : !searchQuery ? (
+            <kbd className="hidden sm:inline-block absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[9px] font-mono text-gray-500 bg-white/[0.04] border border-white/10 rounded pointer-events-none">
+              Ctrl+K
+            </kbd>
+          ) : null}
         </div>
 
         {/* Tabs (hidden during search) */}

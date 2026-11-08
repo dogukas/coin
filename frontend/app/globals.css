@@ -27,19 +27,19 @@
   --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
   --font-sora: "Sora", ui-sans-serif, system-ui, sans-serif;
 
-  /* Default (Neutral/Blue Theme) */
-  --ground: #060b12;
-  --card: #0a101c;
-  --card-2: #0c1424;
-  --line: #1c263b;
-  --ink: #e9ecf6;
-  --ink-dim: #8791a9;
-  --ink-faint: #545c6f;
+  /* Pro Terminal Dark-Mode Palette (#08090b / #0d0e12) */
+  --ground: #08090b;
+  --card: #0d0e12;
+  --card-2: #12141c;
+  --line: #1e2230;
+  --ink: #f1f5f9;
+  --ink-dim: #94a3b8;
+  --ink-faint: #64748b;
   
-  --bg-glow: #0d1a33;
-  --track: #161f33;
+  --bg-glow: #0f172a;
+  --track: #181b26;
 
-  --crimson: #ff3b5c;
+  --crimson: #f43f5e;
   --gain: #2fd6a1;
   --loss: #ff5a6e;
   --warn: #f5b13d;
@@ -200,4 +200,35 @@ body {
 /* Smooth scrolling for mobile */
 .custom-scrollbar {
   -webkit-overflow-scrolling: touch;
+}
+
+/* Live price flash feedback */
+@keyframes price-flash-up {
+  0% {
+    background-color: rgba(16, 185, 129, 0.28);
+    box-shadow: 0 0 18px rgba(16, 185, 129, 0.35);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+@keyframes price-flash-down {
+  0% {
+    background-color: rgba(244, 63, 94, 0.28);
+    box-shadow: 0 0 18px rgba(244, 63, 94, 0.35);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.flash-up {
+  animation: price-flash-up 0.65s ease-out;
+}
+
+.flash-down {
+  animation: price-flash-down 0.65s ease-out;
 }
