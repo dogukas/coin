@@ -22,6 +22,8 @@ export interface RadarAlertRecord {
   closePrice?: number;
   /** Kapanış (veya son) fiyatına göre % kâr/zarar */
   pnlPct?: number;
+  /** Bildirilen en yüksek fiyat kilometre taşı (%): 3, 5, 10, 20 */
+  milestone?: number;
 }
 
 export interface RadarStats {
@@ -146,3 +148,4 @@ export function computeStats(history: RadarAlertRecord[]): RadarStats {
     avgPnl: pnls.length > 0 ? pnls.reduce((a, b) => a + b, 0) / pnls.length : null,
   };
 }
+

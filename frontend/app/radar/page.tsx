@@ -1,7 +1,8 @@
 "use client";
 
 // Pump Radar — grafik okumadan, tek bir skorlu listeyle "pump başlamadan önce" birikim yapan coinleri yakala.
-// Skor: hacim sıçraması + erken evre + Bollinger sıkışması + alıcı baskısı + emir defteri + funding.
+// Canlı Bildirim & Olan Biten Akışı: yeni alarmlar, +%3/+%5/+%10/+%20 yükseliş kilometre taşları,
+// Hedef 1 (TP1), Stop, skor sıçramaları (+12 puan) ve borsa bağlantı durumu anlık bildirilir.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -20,6 +21,11 @@ import {
   LineChart,
   Clock,
   Flame,
+  Bell,
+  BellRing,
+  BellOff,
+  Activity,
+  Send,
 } from "lucide-react";
 import { useDashboardStore } from "@/lib/store";
 import type { RadarCoin, RadarPayload, ScoreBreakdown } from "@/lib/pumpRadar";
@@ -33,18 +39,31 @@ import {
   type AlertStatus,
   type RadarAlertRecord,
 } from "@/lib/radarHistory";
+import {
+  alertEvents,
+  clearEvents,
+  detectSurges,
+  fmtPrice,
+  loadEvents,
+  MAX_EVENTS,
+  recentSurgeIds,
+  saveEvents,
+  systemEvent,
+  trackProgress,
+  type EventTone,
+  type RadarEvent,
+} from "@/lib/radarEvents";
+import {
+  enableNotifications,
+  getNotifyPermission,
+  showSystemNotification,
+  type NotifyPermission,
+} from "@/lib/radarNotify";
 
 const REFRESH_MS = 60_000;
 const THRESHOLDS = [60, 70, 80] as const;
 
 // ── Biçimlendirme ─────────────────────────────────────────────────────────────
-function fmtPrice(p: number): string {
-  if (p >= 1000) return p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (p >= 1) return p.toFixed(4);
-  if (p >= 0.01) return p.toFixed(5);
-  return p.toPrecision(4);
-}
-
 function fmtUsd(n: number): string {
   if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
   if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
@@ -79,6 +98,29 @@ const BREAKDOWN_META: Array<{ key: keyof ScoreBreakdown; label: string; color: s
   { key: "book", label: "Emir defteri", color: "bg-sky-400", max: 10 },
   { key: "funding", label: "Funding", color: "bg-rose-400", max: 5 },
 ];
+
+const EVENT_TONE_STYLE: Record<EventTone, { border: string; badge: string; dot: string }> = {
+  good: {
+    border: "border-emerald-500/30 bg-emerald-950/20",
+    badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    dot: "bg-emerald-400",
+  },
+  bad: {
+    border: "border-rose-500/30 bg-rose-950/20",
+    badge: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+    dot: "bg-rose-400",
+  },
+  warn: {
+    border: "border-amber-500/30 bg-amber-950/20",
+    badge: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    dot: "bg-amber-400",
+  },
+  info: {
+    border: "border-sky-500/25 bg-sky-950/15",
+    badge: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+    dot: "bg-sky-400",
+  },
+};
 
 // ── Alt bileşenler ────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
@@ -270,6 +312,62 @@ function HistoryList({ history, now }: { history: RadarAlertRecord[]; now: numbe
   );
 }
 
+function EventFeedList({
+  events,
+  now,
+  onOpenChart,
+}: {
+  events: RadarEvent[];
+  now: number;
+  onOpenChart: (symbol: string) => void;
+}) {
+  if (events.length === 0) {
+    return (
+      <div className="rounded-2xl border border-white/5 bg-[#0d0e12] p-10 text-center text-sm text-gray-500">
+        Henüz kaydedilmiş bir olay yok. Tarama tamamlandığında veya eşik aşıldığında burası anlık güncellenir.
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2.5">
+      {events.map((ev) => {
+        const style = EVENT_TONE_STYLE[ev.tone];
+        return (
+          <div
+            key={ev.id}
+            className={`rounded-xl border p-3.5 flex items-start justify-between gap-3 transition-all ${style.border}`}
+          >
+            <div className="flex items-start gap-3 min-w-0">
+              <span className={`mt-1.5 w-2 h-2 rounded-full flex-none ${style.dot}`} />
+              <div className="flex flex-col gap-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-white">{ev.title}</span>
+                  {ev.exchange && (
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-white/10 text-gray-300 bg-black/30">
+                      {ev.exchange}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-mono text-gray-400">{timeAgo(ev.ts, now)}</span>
+                </div>
+                <p className="text-xs text-gray-300 leading-relaxed">{ev.message}</p>
+              </div>
+            </div>
+
+            {ev.symbol && ev.exchange === "BINANCE" && (
+              <button
+                onClick={() => onOpenChart(ev.symbol as string)}
+                className="flex-none flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] text-gray-300 transition-colors"
+              >
+                <LineChart size={11} /> Grafik
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Sayfa ─────────────────────────────────────────────────────────────────────
 export default function RadarPage() {
   const router = useRouter();
@@ -277,17 +375,24 @@ export default function RadarPage() {
 
   const [data, setData] = useState<RadarPayload | null>(null);
   const [history, setHistory] = useState<RadarAlertRecord[]>([]);
+  const [events, setEvents] = useState<RadarEvent[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"radar" | "history">("radar");
+  const [tab, setTab] = useState<"radar" | "events" | "history">("radar");
   const [threshold, setThreshold] = useState<number>(70);
   const [soundOn, setSoundOn] = useState(false);
+  const [notifyPerm, setNotifyPerm] = useState<NotifyPermission>("default");
   const [now, setNow] = useState(() => Date.now());
 
   const thresholdRef = useRef(threshold);
   const soundRef = useRef(soundOn);
   const audioRef = useRef<AudioContext | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const prevScoresRef = useRef<Record<string, number>>({});
+  const sourcesOkRef = useRef<boolean>(true);
+  const initializedScanRef = useRef<boolean>(false);
+  const tabRef = useRef(tab);
 
   useEffect(() => {
     thresholdRef.current = threshold;
@@ -297,20 +402,68 @@ export default function RadarPage() {
     soundRef.current = soundOn;
   }, [soundOn]);
 
-  const beep = useCallback(() => {
+  useEffect(() => {
+    tabRef.current = tab;
+  }, [tab]);
+
+  const playTone = useCallback((tone: EventTone) => {
     const ctx = audioRef.current;
     if (!ctx || !soundRef.current) return;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.55);
+    try {
+      const nowTime = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = tone === "bad" ? "sawtooth" : "sine";
+
+      if (tone === "good") {
+        osc.frequency.setValueAtTime(660, nowTime);
+        osc.frequency.setValueAtTime(990, nowTime + 0.14);
+      } else if (tone === "bad") {
+        osc.frequency.setValueAtTime(340, nowTime);
+        osc.frequency.setValueAtTime(220, nowTime + 0.18);
+      } else {
+        osc.frequency.setValueAtTime(740, nowTime);
+      }
+
+      gain.gain.setValueAtTime(0.0001, nowTime);
+      gain.gain.exponentialRampToValueAtTime(0.24, nowTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, nowTime + 0.45);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(nowTime);
+      osc.stop(nowTime + 0.48);
+    } catch {
+      // AudioContext hatasını yoksay
+    }
   }, []);
+
+  const dispatchNotifications = useCallback(
+    (newEvents: RadarEvent[]) => {
+      if (newEvents.length === 0) return;
+
+      // Sesli uyarı (en yüksek öncelikli olaya göre)
+      const hasGood = newEvents.some((e) => e.tone === "good");
+      const hasBad = newEvents.some((e) => e.tone === "bad");
+      playTone(hasGood ? "good" : hasBad ? "bad" : "info");
+
+      // Sayfa içi Toast ve Masaüstü Bildirimleri
+      newEvents.slice(0, 4).forEach((ev) => {
+        if (ev.tone === "good") {
+          toast.success(ev.title, { description: ev.message, duration: 10000 });
+        } else if (ev.tone === "bad") {
+          toast.error(ev.title, { description: ev.message, duration: 10000 });
+        } else if (ev.tone === "warn") {
+          toast.warning(ev.title, { description: ev.message, duration: 8000 });
+        } else {
+          toast(ev.title, { description: ev.message, duration: 7000 });
+        }
+
+        if (ev.notify) {
+          void showSystemNotification(ev.title, ev.message, ev.id);
+        }
+      });
+    },
+    [playTone]
+  );
 
   const refresh = useCallback(async () => {
     abortRef.current?.abort();
@@ -318,8 +471,9 @@ export default function RadarPage() {
     abortRef.current = controller;
 
     setLoading(true);
-    const stored = loadHistory();
-    const openIds = stored.filter((h) => h.status === "open").map((h) => h.id);
+    const storedHistory = loadHistory();
+    const storedEvents = loadEvents();
+    const openIds = storedHistory.filter((h) => h.status === "open").map((h) => h.id);
     const url = `/api/market/pump-radar${openIds.length ? `?track=${encodeURIComponent(openIds.join(","))}` : ""}`;
 
     try {
@@ -328,53 +482,167 @@ export default function RadarPage() {
       const payload = (await res.json()) as RadarPayload;
       const ts = Date.now();
 
-      const evaluated = evaluateHistory(stored, payload.prices ?? {}, ts);
-      const { history: next, fresh } = addAlerts(evaluated, payload.coins, thresholdRef.current, ts);
-      saveHistory(next);
+      // 1) Açık alarmları değerlendir + hedef/stop/pump kilometre taşı olaylarını üret
+      const evaluated = evaluateHistory(storedHistory, payload.prices ?? {}, ts);
+      const { history: progressed, events: progressEvs } = trackProgress(
+        storedHistory,
+        evaluated,
+        payload.prices ?? {},
+        ts
+      );
 
-      setHistory(next);
+      // 2) Yeni alarmları ekle + olaylarını üret
+      const { history: nextHistory, fresh } = addAlerts(progressed, payload.coins, thresholdRef.current, ts);
+      saveHistory(nextHistory);
+      const freshEvs = alertEvents(fresh, ts);
+
+      // 3) Skor sıçramalarını (+12 puan) yakala
+      const freshIds = new Set(fresh.map((c) => c.id));
+      const surgeEvs = detectSurges(
+        payload.coins,
+        prevScoresRef.current,
+        freshIds,
+        recentSurgeIds(storedEvents, ts),
+        thresholdRef.current,
+        ts
+      );
+
+      // Güncel skorları bir sonraki karşılaştırma için sakla
+      const nextScoreMap: Record<string, number> = {};
+      for (const c of payload.coins) nextScoreMap[c.id] = c.score;
+      prevScoresRef.current = nextScoreMap;
+
+      // 4) Borsa sağlık durumu değişimi
+      const isOk = payload.sources.binance || payload.sources.mexc;
+      const sysEvs: RadarEvent[] = [];
+      if (isOk !== sourcesOkRef.current) {
+        sysEvs.push(systemEvent(isOk, ts));
+        sourcesOkRef.current = isOk;
+      }
+
+      // 5) İlk tarama özeti (eğer geçmişte hiç olay yoksa kullanıcıya radarın çalıştığını göster)
+      const initialEvs: RadarEvent[] = [];
+      if (!initializedScanRef.current) {
+        initializedScanRef.current = true;
+        if (storedEvents.length === 0 && payload.coins.length > 0) {
+          const top = payload.coins[0];
+          initialEvs.push({
+            id: `scan-init-${ts}`,
+            ts,
+            type: "system",
+            tone: "info",
+            coinId: top.id,
+            symbol: top.symbol,
+            exchange: top.exchange,
+            title: `📡 Radar aktif: ${payload.scanned} coin tarandı`,
+            message: `Şu an en güçlü aday ${top.symbol.replace("USDT", "")} (Skor ${top.score} · ${top.reasons[0] ?? "Birikim izleniyor"}).`,
+            notify: false,
+          });
+        }
+      }
+
+      const incoming = [...freshEvs, ...progressEvs, ...surgeEvs, ...sysEvs, ...initialEvs];
+      const mergedEvents = [...incoming, ...storedEvents].slice(0, MAX_EVENTS);
+      if (incoming.length > 0) {
+        saveEvents(mergedEvents);
+        if (tabRef.current !== "events") {
+          setUnreadCount((c) => c + incoming.length);
+        }
+        dispatchNotifications(incoming);
+      }
+
+      setEvents(mergedEvents);
+      setHistory(nextHistory);
       setData(payload);
       setNow(ts);
       setError(null);
-
-      if (fresh.length > 0) {
-        beep();
-        fresh.slice(0, 3).forEach((c) => {
-          toast.success(`🚀 ${c.symbol.replace("USDT", "")} — Radar skoru ${c.score}`, {
-            description: c.reasons[0] ?? "Birikim işaretleri güçlü",
-            duration: 12000,
-          });
-        });
-      }
     } catch (err) {
       if ((err as Error)?.name === "AbortError") return;
       setError("Radar verisi alınamadı. Birkaç saniye sonra otomatik yeniden denenecek.");
     } finally {
       setLoading(false);
     }
-  }, [beep]);
+  }, [dispatchNotifications]);
 
   // Kayıtlı ayarları yükle + 60 sn'lik tarama döngüsü
   useEffect(() => {
     const savedThreshold = Number(window.localStorage.getItem("radar-threshold"));
-    if (THRESHOLDS.includes(savedThreshold as (typeof THRESHOLDS)[number])) setThreshold(savedThreshold);
+    const initialThreshold = THRESHOLDS.includes(savedThreshold as (typeof THRESHOLDS)[number])
+      ? savedThreshold
+      : 70;
+    thresholdRef.current = initialThreshold;
 
-    refresh();
-    const interval = setInterval(refresh, REFRESH_MS);
+    setNotifyPerm(getNotifyPermission());
+    setEvents(loadEvents());
+    setHistory(loadHistory());
+    if (initialThreshold !== 70) setThreshold(initialThreshold);
+
+    void refresh();
+    const interval = setInterval(() => void refresh(), REFRESH_MS);
     const tick = setInterval(() => setNow(Date.now()), 15_000);
     return () => {
       clearInterval(interval);
       clearInterval(tick);
       abortRef.current?.abort();
     };
-  }, [refresh]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleSound = () => {
     if (!soundOn && !audioRef.current) {
-      // AudioContext kullanıcı etkileşimiyle oluşturulmalı
       audioRef.current = new AudioContext();
     }
-    setSoundOn((v) => !v);
+    const nextState = !soundOn;
+    soundRef.current = nextState;
+    setSoundOn(nextState);
+    if (nextState) {
+      playTone("good");
+      toast.success("🔊 Sesli radar uyarıları açıldı");
+    }
+  };
+
+  const handleEnableNotifications = async () => {
+    const perm = await enableNotifications();
+    setNotifyPerm(perm);
+    if (perm === "granted") {
+      await showSystemNotification(
+        "🔔 Pump Radar Bildirimleri Aktif",
+        "Eşik üstü yeni coinler, +%3/+%5/+%10 yükselişler ve hedef/stop hareketleri anında bildirilecek.",
+        "radar-welcome"
+      );
+      toast.success("Masaüstü bildirimleri etkinleştirildi!");
+    } else if (perm === "denied") {
+      toast.error("Tarayıcı bildirim izni reddedildi. Adres çubuğundaki kilit simgesinden açabilirsiniz.");
+    }
+  };
+
+  const handleTestNotification = async () => {
+    if (!audioRef.current) {
+      audioRef.current = new AudioContext();
+    }
+    const prevSound = soundRef.current;
+    soundRef.current = true;
+    playTone("good");
+    soundRef.current = prevSound;
+
+    const testEv: RadarEvent = {
+      id: `test-${Date.now()}`,
+      ts: Date.now(),
+      type: "alert",
+      tone: "good",
+      title: "🔔 Test Bildirimi — Sistem Hazır",
+      message: "Yeni bir coin eşiği geçtiğinde veya açık alarmlarınız hedefe/stop'a ulaştığında böyle bildirim alacaksınız.",
+      notify: true,
+    };
+
+    const next = [testEv, ...events].slice(0, MAX_EVENTS);
+    setEvents(next);
+    saveEvents(next);
+
+    toast.success(testEv.title, { description: testEv.message, duration: 6000 });
+    if (notifyPerm === "granted") {
+      await showSystemNotification(testEv.title, testEv.message, testEv.id);
+    }
   };
 
   const openChart = (symbol: string) => {
@@ -382,20 +650,30 @@ export default function RadarPage() {
     router.push("/");
   };
 
-  const handleClear = () => {
+  const handleClearHistory = () => {
     clearHistory();
     setHistory([]);
   };
 
+  const handleClearEvents = () => {
+    clearEvents();
+    setEvents([]);
+    setUnreadCount(0);
+  };
+
   const stats = computeStats(history);
   const coins = data?.coins ?? [];
+  const latestEvents = events.slice(0, 3);
 
   return (
     <div className="min-h-screen bg-[#08090b] text-white">
       {/* Header */}
       <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 py-3 border-b border-white/5 bg-[#08090b]/90 backdrop-blur">
         <div className="flex items-center gap-3">
-          <Link href="/" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
+          <Link
+            href="/"
+            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+          >
             <ArrowLeft size={16} />
           </Link>
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
@@ -407,7 +685,8 @@ export default function RadarPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Alarm Eşiği */}
           <div className="flex items-center gap-1 rounded-lg bg-white/5 p-0.5" title="Alarm eşiği">
             {THRESHOLDS.map((t) => (
               <button
@@ -424,19 +703,64 @@ export default function RadarPage() {
               </button>
             ))}
           </div>
+
+          {/* Masaüstü Bildirim Butonu */}
+          {notifyPerm === "granted" ? (
+            <span
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold"
+              title="Masaüstü bildirimleri açık"
+            >
+              <BellRing size={13} />
+              <span className="hidden sm:inline">Bildirim Açık</span>
+            </span>
+          ) : notifyPerm === "denied" ? (
+            <span
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs"
+              title="Tarayıcı ayarlarından bildirim izni verin"
+            >
+              <BellOff size={13} />
+              <span className="hidden sm:inline">İzin Engelli</span>
+            </span>
+          ) : (
+            <button
+              onClick={() => void handleEnableNotifications()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 text-xs font-semibold transition-colors"
+              title="Tarayıcı masaüstü bildirimlerini etkinleştir"
+            >
+              <Bell size={13} />
+              <span>Bildirimleri Aç</span>
+            </button>
+          )}
+
+          {/* Sesli Uyarı Butonu */}
           <button
             onClick={toggleSound}
-            className={`p-2 rounded-lg transition-colors ${
-              soundOn ? "bg-emerald-500/20 text-emerald-300" : "bg-white/5 text-gray-400 hover:text-white"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              soundOn
+                ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
+                : "bg-white/5 text-gray-400 hover:text-white"
             }`}
             title={soundOn ? "Sesli alarm açık" : "Sesli alarm kapalı"}
           >
             {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
+            <span className="hidden md:inline">{soundOn ? "Ses Açık" : "Ses Kapalı"}</span>
           </button>
+
+          {/* Test Bildirimi */}
           <button
-            onClick={refresh}
+            onClick={() => void handleTestNotification()}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-gray-300 transition-colors"
+            title="Örnek ses ve bildirim gönder"
+          >
+            <Send size={12} />
+            <span className="hidden sm:inline">Test Et</span>
+          </button>
+
+          {/* Yenile */}
+          <button
+            onClick={() => void refresh()}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-40 text-xs text-gray-300 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-40 text-xs text-gray-300 transition-colors"
           >
             {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
             Yenile
@@ -445,6 +769,53 @@ export default function RadarPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 md:px-6 py-5 flex flex-col gap-5">
+        {/* Canlı Olan Biten Şeridi */}
+        <section className="rounded-2xl border border-white/10 bg-[#0d0e12] p-3.5 flex flex-col gap-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-bold text-white">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <Activity size={14} className="text-emerald-400" />
+              <span>CANLI OLAN BİTEN AKIŞI</span>
+              <span className="text-[10px] font-normal text-gray-400">
+                (Yeni alarmlar, +%3/+%5/+%10 yükselişler, hedef/stop vuruşları ve skor sıçramaları)
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setTab("events");
+                setUnreadCount(0);
+              }}
+              className="text-[11px] text-emerald-400 hover:underline font-semibold"
+            >
+              Tümünü Gör ({events.length}) →
+            </button>
+          </div>
+
+          {latestEvents.length === 0 ? (
+            <div className="text-xs text-gray-500 py-1">
+              İlk tarama bekleniyor… Olaylar gerçekleştiğinde anında burada listelenir ve bildirim gönderilir.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              {latestEvents.map((ev) => {
+                const style = EVENT_TONE_STYLE[ev.tone];
+                return (
+                  <div
+                    key={ev.id}
+                    className={`rounded-xl border p-2.5 flex flex-col gap-1 ${style.border}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-white truncate">{ev.title}</span>
+                      <span className="text-[9px] font-mono text-gray-400 flex-none">{timeAgo(ev.ts, now)}</span>
+                    </div>
+                    <p className="text-[11px] text-gray-300 line-clamp-2 leading-snug">{ev.message}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         {/* Nasıl çalışır */}
         <section className="rounded-2xl border border-emerald-400/15 bg-gradient-to-br from-emerald-950/30 to-transparent p-4 text-[12px] leading-relaxed text-gray-300">
           <div className="flex items-center gap-2 font-semibold text-emerald-300 mb-1">
@@ -468,7 +839,12 @@ export default function RadarPage() {
             sub="Pump zaten olmuş"
             tone="text-gray-300"
           />
-          <StatCard label="Listede" value={String(coins.length)} sub={`${coins.filter((c) => c.score >= threshold).length} adet ≥${threshold}`} tone="text-emerald-400" />
+          <StatCard
+            label="Listede"
+            value={String(coins.length)}
+            sub={`${coins.filter((c) => c.score >= threshold).length} adet ≥${threshold}`}
+            tone="text-emerald-400"
+          />
           <StatCard
             label="İsabet (Hedef 1)"
             value={stats.hitRate === null ? "—" : `%${stats.hitRate.toFixed(0)}`}
@@ -484,7 +860,7 @@ export default function RadarPage() {
         </section>
 
         {/* Sekmeler */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex gap-1 rounded-xl bg-white/5 p-1">
             <button
               onClick={() => setTab("radar")}
@@ -492,7 +868,23 @@ export default function RadarPage() {
                 tab === "radar" ? "bg-emerald-500/20 text-emerald-300" : "text-gray-400 hover:text-white"
               }`}
             >
-              <Flame size={12} /> Radar
+              <Flame size={12} /> Radar ({coins.length})
+            </button>
+            <button
+              onClick={() => {
+                setTab("events");
+                setUnreadCount(0);
+              }}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                tab === "events" ? "bg-emerald-500/20 text-emerald-300" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <BellRing size={12} /> Olan Biten ({events.length})
+              {unreadCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 rounded-full bg-emerald-400 text-black text-[10px] font-extrabold">
+                  +{unreadCount}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setTab("history")}
@@ -503,12 +895,21 @@ export default function RadarPage() {
               <Clock size={12} /> Alarm Geçmişi ({history.length})
             </button>
           </div>
+
           {tab === "history" && history.length > 0 && (
             <button
-              onClick={handleClear}
+              onClick={handleClearHistory}
               className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-rose-400 transition-colors"
             >
-              <Trash2 size={12} /> Geçmişi temizle
+              <Trash2 size={12} /> Alarm geçmişini temizle
+            </button>
+          )}
+          {tab === "events" && events.length > 0 && (
+            <button
+              onClick={handleClearEvents}
+              className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-rose-400 transition-colors"
+            >
+              <Trash2 size={12} /> Akışı temizle
             </button>
           )}
         </div>
@@ -540,6 +941,8 @@ export default function RadarPage() {
               ))}
             </div>
           )
+        ) : tab === "events" ? (
+          <EventFeedList events={events} now={now} onOpenChart={openChart} />
         ) : (
           <HistoryList history={history} now={now} />
         )}
