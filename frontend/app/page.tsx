@@ -30,6 +30,7 @@ import {
   Target,
   Home,
   Coins,
+  Radar,
   Sparkles
 } from "lucide-react";
 
@@ -277,6 +278,11 @@ export default function DashboardPage() {
               <span className="text-gray-500 font-medium text-[10px] md:text-xs ml-0.5">/USDT</span>
             </span>
           </div>
+
+          <Link href="/radar" className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 hover:from-emerald-500/30 hover:to-teal-500/30 border border-emerald-400/40 transition-all font-bold text-xs shadow-[0_0_18px_rgba(16,185,129,0.25)]">
+            <Radar size={14} className="animate-pulse" />
+            <span className="hidden sm:inline">Pump Radar</span>
+          </Link>
 
           <Link href="/screener" className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 border border-violet-500/20 hover:border-violet-500/40 transition-all font-semibold text-xs shadow-[0_0_15px_rgba(139,92,246,0.1)]">
             <LayoutGrid size={14} />
@@ -562,6 +568,10 @@ export default function DashboardPage() {
           <Home size={18} />
           <span className="text-[9px] font-semibold">Ana Sayfa</span>
         </div>
+          <Link href="/radar" className="flex flex-col items-center gap-0.5 text-emerald-300 hover:text-white transition-colors">
+          <Radar size={18} />
+          <span className="text-[9px] font-semibold">Pump Radar</span>
+        </Link>
           <Link href="/screener" className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-white transition-colors">
           <LayoutGrid size={18} />
           <span className="text-[9px] font-semibold">Küp Ekran</span>
