@@ -32,7 +32,9 @@ import {
   Home,
   Coins,
   Radar,
-  Sparkles
+  Sparkles,
+  Star,
+  ShieldCheck,
 } from "lucide-react";
 
 import GlobalMarketPanel from "@/components/dashboard/GlobalMarketPanel";
@@ -72,8 +74,11 @@ const DepthChart = dynamic(
 
 export default function DashboardPage() {
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
+  const setSymbol = useDashboardStore((s) => s.setSymbol);
   const activeInterval = useDashboardStore((s) => s.activeInterval);
   const setInterval = useDashboardStore((s) => s.setInterval);
+  const favoriteSymbols = useDashboardStore((s) => s.favoriteSymbols);
+  const toggleFavoriteSymbol = useDashboardStore((s) => s.toggleFavoriteSymbol);
   const wsConnected = useDashboardStore((s) => s.wsConnected);
   const setConnected = useDashboardStore((s) => s.setConnected);
   const setCandles = useDashboardStore((s) => s.setCandles);
@@ -357,12 +362,34 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
+          {/* Canlı BTC / ETH Piyasa Nabzı & Hızlı Geçiş */}
+          <HeaderMarketPulse activeSymbol={activeSymbol} onSelectSymbol={setSymbol} />
+
           <div className="hidden sm:flex items-center gap-2 px-3 md:px-4 py-1 md:py-1.5 rounded-full bg-white/5 border border-white/10 shadow-inner">
             <span className="text-[9px] md:text-[10px] text-gray-400 font-medium uppercase">Aktif</span>
             <span className="text-xs md:text-sm font-black text-white drop-shadow-sm">
               {activeSymbol.replace("USDT", "")}
               <span className="text-gray-500 font-medium text-[10px] md:text-xs ml-0.5">/USDT</span>
             </span>
+            <button
+              type="button"
+              onClick={() => toggleFavoriteSymbol(activeSymbol)}
+              title={
+                favoriteSymbols.includes(activeSymbol)
+                  ? "Favorilerden çıkar"
+                  : "Favorilere ekle"
+              }
+              className="ml-0.5 p-0.5 rounded hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <Star
+                size={12}
+                className={
+                  favoriteSymbols.includes(activeSymbol)
+                    ? "text-amber-400 fill-amber-400"
+                    : "text-gray-500 hover:text-gray-300"
+                }
+              />
+            </button>
           </div>
 
           <Link href="/radar" className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 hover:from-emerald-500/30 hover:to-teal-500/30 border border-emerald-400/40 transition-all font-bold text-xs shadow-[0_0_18px_rgba(16,185,129,0.25)]">
@@ -663,6 +690,126 @@ export default function DashboardPage() {
           <span className="text-[9px] font-semibold">Küp Ekran</span>
         </Link>
       </nav>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Header Market Pulse (Live BTC & ETH Ticker + Shield Status)
+// ──────────────────────────────────────────────
+
+interface PulseCoin {
+  symbol: "BTCUSDT" | "ETHUSDT";
+  label: "BTC" | "ETH";
+  price: number;
+  change24h: number;
+}
+
+function HeaderMarketPulse({
+  activeSymbol,
+  onSelectSymbol,
+}: {
+  activeSymbol: string;
+  onSelectSymbol: (symbol: string) => void;
+}) {
+  const [pulse, setPulse] = useState<Record<string, PulseCoin>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchPulse = async () => {
+      const endpoints = [
+        "https://data-api.binance.vision/api/v3/ticker/24hr?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22%5D",
+        "https://api.binance.com/api/v3/ticker/24hr?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22%5D",
+      ];
+      for (const url of endpoints) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const arr = (await res.json()) as Array<{
+            symbol: string;
+            lastPrice: string;
+            priceChangePercent: string;
+          }>;
+          if (!Array.isArray(arr) || cancelled) continue;
+          const next: Record<string, PulseCoin> = {};
+          for (const item of arr) {
+            if (item.symbol === "BTCUSDT" || item.symbol === "ETHUSDT") {
+              next[item.symbol] = {
+                symbol: item.symbol,
+                label: item.symbol === "BTCUSDT" ? "BTC" : "ETH",
+                price: parseFloat(item.lastPrice) || 0,
+                change24h: parseFloat(item.priceChangePercent) || 0,
+              };
+            }
+          }
+          setPulse(next);
+          break;
+        } catch {
+          // try next endpoint
+        }
+      }
+    };
+
+    fetchPulse();
+    const timer = window.setInterval(fetchPulse, 12000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const btc = pulse["BTCUSDT"];
+  const eth = pulse["ETHUSDT"];
+  if (!btc && !eth) return null;
+
+  const btcSafe = (btc?.change24h ?? 0) > -2.5;
+
+  return (
+    <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/10 text-[11px] font-mono">
+      {[btc, eth].map((c) => {
+        if (!c) return null;
+        const isUp = c.change24h >= 0;
+        const isCurrent = activeSymbol === c.symbol;
+        return (
+          <button
+            key={c.symbol}
+            type="button"
+            onClick={() => onSelectSymbol(c.symbol)}
+            title={`${c.label}/USDT grafiğine geç`}
+            className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full transition-colors cursor-pointer ${
+              isCurrent ? "bg-white/10 text-white" : "hover:bg-white/5 text-gray-300"
+            }`}
+          >
+            <span className="font-sans font-bold text-white">{c.label}</span>
+            <span className="tabular-nums">
+              ${c.price.toLocaleString("en-US", { maximumFractionDigits: c.price > 100 ? 0 : 2 })}
+            </span>
+            <span className={`text-[10px] font-bold ${isUp ? "text-emerald-400" : "text-rose-400"}`}>
+              {isUp ? "+" : ""}
+              {c.change24h.toFixed(1)}%
+            </span>
+          </button>
+        );
+      })}
+
+      {btc && (
+        <span
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-sans font-bold border ${
+            btcSafe
+              ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+              : "bg-rose-500/15 text-rose-300 border-rose-500/35"
+          }`}
+          title={
+            btcSafe
+              ? "BTC 24s değişimi dengeli; altcoin işlemleri için piyasa zemini güvenli."
+              : "BTC sert satış baskısında; altcoin long işlemlerinde dikkatli olunmalı."
+          }
+        >
+          <ShieldCheck size={11} />
+          {btcSafe ? "BTC Güvenli" : "BTC Baskılı"}
+        </span>
+      )}
     </div>
   );
 }

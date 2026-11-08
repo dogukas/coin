@@ -60,11 +60,13 @@ export default function CandlestickChart() {
   // Emir Defteri Fiyat Etkisi (Destek & Direnç Duvarı) Fiyat Çizgileri
   const bidWallLineRef = useRef<IPriceLine | null>(null);
   const askWallLineRef = useRef<IPriceLine | null>(null);
+  const tradePlanLinesRef = useRef<IPriceLine[]>([]);
   const [bookImpact, setBookImpact] = useState<PriceImpactAnalysis | null>(null);
 
   const lastCandleCountRef = useRef<number>(0);
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   const activeInterval = useDashboardStore((s) => s.activeInterval);
+  const chartTradePlan = useDashboardStore((s) => s.chartTradePlan);
   const prevKeyRef = useRef<string>(`${activeSymbol}_${activeInterval}`);
 
   const candles = useDashboardStore((s) => s.candles);
@@ -585,6 +587,61 @@ export default function CandlestickChart() {
       });
     }
   }, [bookImpact, toggles.obImpact, candles.length]);
+
+  // Akıllı TP / SL Simülatöründen Gelen İşlem Planı Çizgilerini Mum Grafiğine Çiz
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+
+    for (const line of tradePlanLinesRef.current) {
+      try {
+        series.removePriceLine(line);
+      } catch {
+        // ignore if already removed
+      }
+    }
+    tradePlanLinesRef.current = [];
+
+    if (!chartTradePlan || chartTradePlan.symbol !== activeSymbol || candles.length === 0) return;
+
+    const entryLine = series.createPriceLine({
+      price: chartTradePlan.entry,
+      color: "#60a5fa",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dotted,
+      axisLabelVisible: true,
+      title: `⚡ Giriş (${chartTradePlan.direction.toUpperCase()})`,
+    });
+
+    const slLine = series.createPriceLine({
+      price: chartTradePlan.sl,
+      color: "#f43f5e",
+      lineWidth: 2,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: "🛑 Stop-Loss",
+    });
+
+    const tp1Line = series.createPriceLine({
+      price: chartTradePlan.tp1,
+      color: "#34d399",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: "🎯 TP 1 (1:1.5)",
+    });
+
+    const tp2Line = series.createPriceLine({
+      price: chartTradePlan.tp2,
+      color: "#10b981",
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      axisLabelVisible: true,
+      title: "🏆 TP 2 (Altın Hedef)",
+    });
+
+    tradePlanLinesRef.current = [entryLine, slLine, tp1Line, tp2Line];
+  }, [chartTradePlan, activeSymbol, candles.length]);
 
   const ind = signalData?.indicators;
 

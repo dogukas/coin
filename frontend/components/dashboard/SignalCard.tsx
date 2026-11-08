@@ -1,18 +1,114 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useDashboardStore } from "@/lib/store";
-import { getSignalLevel } from "@/lib/utils";
-import { TrendingUp, TrendingDown, Minus, HelpCircle } from "lucide-react";
+import { getSignalLevel, type CandleData } from "@/lib/utils";
+import { buildSignalPayloadFromCandles } from "@/lib/indicators";
+import { TrendingUp, TrendingDown, Minus, HelpCircle, Compass } from "lucide-react";
+
+const MTF_INTERVALS = ["1m", "5m", "15m", "1h", "4h"] as const;
+
+interface MtfItem {
+  interval: string;
+  score: number;
+  shortLabel: "GÜÇLÜ AL" | "AL" | "NÖTR" | "SAT";
+  tone: "pos" | "neu" | "neg";
+}
+
+function classifyScore(score: number): { shortLabel: MtfItem["shortLabel"]; tone: MtfItem["tone"] } {
+  const level = getSignalLevel(score);
+  if (level === "strong_buy") return { shortLabel: "GÜÇLÜ AL", tone: "pos" };
+  if (level === "buy") return { shortLabel: "AL", tone: "pos" };
+  if (level === "sell") return { shortLabel: "SAT", tone: "neg" };
+  return { shortLabel: "NÖTR", tone: "neu" };
+}
 
 export default function SignalCard() {
   const signalData = useDashboardStore((s) => s.signalData);
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
+  const activeInterval = useDashboardStore((s) => s.activeInterval);
+  const setChartInterval = useDashboardStore((s) => s.setInterval);
+
+  const [mtfMap, setMtfMap] = useState<Record<string, MtfItem>>({});
+
+  // Çoklu Zaman Dilimi (1m, 5m, 15m, 1h, 4h) Canlı Sinyal Pusulası
+  useEffect(() => {
+    let cancelled = false;
+    setMtfMap({});
+
+    const fetchOneInterval = async (tf: string): Promise<MtfItem | null> => {
+      const endpoints = [
+        "https://data-api.binance.vision/api/v3/klines",
+        "https://api.binance.com/api/v3/klines",
+      ];
+      for (const base of endpoints) {
+        try {
+          const res = await fetch(`${base}?symbol=${activeSymbol}&interval=${tf}&limit=80`);
+          if (!res.ok) continue;
+          const raw = (await res.json()) as unknown[][];
+          if (!Array.isArray(raw) || raw.length < 30) continue;
+          const candles: CandleData[] = raw.map((k) => ({
+            time: Math.floor(Number(k[0]) / 1000),
+            open: parseFloat(String(k[1])),
+            high: parseFloat(String(k[2])),
+            low: parseFloat(String(k[3])),
+            close: parseFloat(String(k[4])),
+            volume: parseFloat(String(k[5])),
+            taker_buy_volume: parseFloat(String(k[9])),
+          }));
+          const sig = buildSignalPayloadFromCandles(activeSymbol, candles);
+          if (!sig) continue;
+          const { shortLabel, tone } = classifyScore(sig.score);
+          return { interval: tf, score: sig.score, shortLabel, tone };
+        } catch {
+          // try next endpoint
+        }
+      }
+      return null;
+    };
+
+    const loadAll = async () => {
+      const results = await Promise.all(MTF_INTERVALS.map((tf) => fetchOneInterval(tf)));
+      if (cancelled) return;
+      const next: Record<string, MtfItem> = {};
+      for (const item of results) {
+        if (item) next[item.interval] = item;
+      }
+      setMtfMap(next);
+    };
+
+    loadAll();
+    const timer = window.setInterval(loadAll, 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeSymbol]);
 
   const score = signalData?.score ?? 0;
   const label = signalData?.label ?? "BEKLE / NÖTR";
   const price = signalData?.price ?? 0;
   const reasons = signalData?.reasons ?? [];
   const level = getSignalLevel(score);
+
+  // Aktif zaman dilimini canlı sinyal skoruyla anlık senkron tut
+  const mergedMtf: MtfItem[] = MTF_INTERVALS.map((tf) => {
+    if (tf === activeInterval && signalData) {
+      const { shortLabel, tone } = classifyScore(signalData.score);
+      return { interval: tf, score: signalData.score, shortLabel, tone };
+    }
+    return (
+      mtfMap[tf] ?? {
+        interval: tf,
+        score: 50,
+        shortLabel: "NÖTR",
+        tone: "neu",
+      }
+    );
+  });
+
+  const mtfBuyCount = mergedMtf.filter((m) => m.tone === "pos").length;
+  const mtfSellCount = mergedMtf.filter((m) => m.tone === "neg").length;
 
   const TrendIcon =
     level === "strong_buy" || level === "buy"
@@ -119,6 +215,59 @@ export default function SignalCard() {
             <TrendIcon size={16} strokeWidth={2.4} />
             {label}
           </div>
+        </div>
+      </section>
+
+      {/* Çoklu Zaman Dilimi (MTF) Onay Pusulası */}
+      <section className="p-3 rounded-2xl bg-black/30 border border-white/10 flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] uppercase text-[#a98791]">
+            <Compass size={13} className="text-emerald-400" />
+            <span>Çoklu Zaman Pusulası</span>
+          </div>
+          <span
+            className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+              mtfBuyCount >= 3
+                ? "bg-[#2fd6a1]/15 text-[#2fd6a1] border-[#2fd6a1]/35"
+                : mtfSellCount >= 3
+                ? "bg-[#ff5a6e]/15 text-[#ff5a6e] border-[#ff5a6e]/35"
+                : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+            }`}
+          >
+            {mtfBuyCount >= 3
+              ? `${mtfBuyCount}/5 AL ONAYLI`
+              : mtfSellCount >= 3
+              ? `${mtfSellCount}/5 SAT BASKISI`
+              : `${mtfBuyCount} AL • ${mtfSellCount} SAT`}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-5 gap-1.5">
+          {mergedMtf.map((item) => {
+            const isCurrent = item.interval === activeInterval;
+            const badgeStyle =
+              item.tone === "pos"
+                ? "bg-[#2fd6a1]/15 text-[#2fd6a1] border-[#2fd6a1]/35"
+                : item.tone === "neg"
+                ? "bg-[#ff5a6e]/15 text-[#ff5a6e] border-[#ff5a6e]/35"
+                : "bg-white/5 text-gray-300 border-white/10";
+            return (
+              <button
+                key={item.interval}
+                onClick={() => setChartInterval(item.interval)}
+                title={`${item.interval} grafiğine geç (Puan: ${item.score})`}
+                className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl border transition-all cursor-pointer ${badgeStyle} ${
+                  isCurrent ? "ring-1 ring-white/50 shadow-sm scale-[1.02]" : "opacity-85 hover:opacity-100"
+                }`}
+              >
+                <span className="text-[10px] font-mono font-bold text-white/90">{item.interval}</span>
+                <span className="text-[11px] font-mono font-extrabold leading-tight my-0.5">{item.score}</span>
+                <span className="text-[8px] font-sans font-bold uppercase tracking-tighter truncate max-w-full">
+                  {item.shortLabel === "GÜÇLÜ AL" ? "G.AL" : item.shortLabel}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </section>
 

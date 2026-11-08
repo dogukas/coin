@@ -2,16 +2,21 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useDashboardStore } from "@/lib/store";
-import { Target, TrendingUp, TrendingDown } from "lucide-react";
+import { Target, TrendingUp, TrendingDown, Shield } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
+import { toast } from "sonner";
 
 export default function TradeTracker() {
   const signalData = useDashboardStore((s) => s.signalData);
+  const activeSymbol = useDashboardStore((s) => s.activeSymbol);
+  const chartTradePlan = useDashboardStore((s) => s.chartTradePlan);
   const currentPrice = signalData?.price ?? 0;
   
   const [entryPrice, setEntryPrice] = useState<string>("");
   const [targetPrice, setTargetPrice] = useState<string>("");
+  const [stopPrice, setStopPrice] = useState<string>("");
   const hasInitializedRef = useRef(false);
+  const notifiedKeyRef = useRef<string>("");
   
   // Set initial entry price to current price once
   useEffect(() => {
@@ -21,10 +26,49 @@ export default function TradeTracker() {
     }
   }, [currentPrice, entryPrice]);
 
+  // Akıllı TP/SL Simülatöründen gelen planı otomatik doldur
+  useEffect(() => {
+    if (chartTradePlan && chartTradePlan.symbol === activeSymbol) {
+      setEntryPrice(chartTradePlan.entry.toString());
+      setTargetPrice(chartTradePlan.tp1.toString());
+      setStopPrice(chartTradePlan.sl.toString());
+      notifiedKeyRef.current = "";
+    }
+  }, [chartTradePlan, activeSymbol]);
+
   const entry = parseFloat(entryPrice) || 0;
   const target = parseFloat(targetPrice) || 0;
+  const stop = parseFloat(stopPrice) || 0;
   
-  const isLong = target > entry;
+  const isLong = target > 0 ? target > entry : true;
+
+  // Hedef veya Stop tetiklendiğinde anlık bildirim
+  useEffect(() => {
+    if (entry <= 0 || currentPrice <= 0) return;
+    const base = activeSymbol.replace("USDT", "");
+    if (target > 0) {
+      const hitTarget = isLong ? currentPrice >= target : currentPrice <= target;
+      const key = `${activeSymbol}_tp_${target}`;
+      if (hitTarget && notifiedKeyRef.current !== key) {
+        notifiedKeyRef.current = key;
+        toast.success(`🏆 ${base} Hedef Fiyata Ulaştı! ($${formatNumber(currentPrice)})`, {
+          description: `Giriş: $${formatNumber(entry)} → Hedef: $${formatNumber(target)} başarıyla vuruldu.`,
+          duration: 6000,
+        });
+      }
+    }
+    if (stop > 0) {
+      const hitStop = isLong ? currentPrice <= stop : currentPrice >= stop;
+      const key = `${activeSymbol}_sl_${stop}`;
+      if (hitStop && notifiedKeyRef.current !== key) {
+        notifiedKeyRef.current = key;
+        toast.error(`🛑 ${base} Stop-Loss Seviyesine Değdi! ($${formatNumber(currentPrice)})`, {
+          description: `Stop seviyesi ($${formatNumber(stop)}) tetiklendi, riskinizi kontrol edin.`,
+          duration: 6000,
+        });
+      }
+    }
+  }, [currentPrice, entry, target, stop, isLong, activeSymbol]);
   
   // Calculations
   let pnlPercent = 0;
@@ -56,33 +100,53 @@ export default function TradeTracker() {
 
   return (
     <section className={cardClass} aria-label="İşlem takipçisi">
-      <div className={chClass}>
-        <Target className="w-4 h-4 flex-none text-[#a78bfa]" strokeWidth={1.8} />
-        <h2 className={h2Class}>Hedef Takibi</h2>
+      <div className="flex items-center justify-between gap-2 min-h-[22px]">
+        <div className="flex items-center gap-2">
+          <Target className="w-4 h-4 flex-none text-[#a78bfa]" strokeWidth={1.8} />
+          <h2 className={h2Class}>Hedef Takibi</h2>
+        </div>
+        {chartTradePlan?.symbol === activeSymbol && (
+          <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            GRAFİKLE SENKRON
+          </span>
+        )}
       </div>
 
       <div className="flex flex-col gap-3">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-1.5">
           {/* Entry Input */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] uppercase tracking-wider text-[var(--ink-faint)]">Giriş Fiyatı</label>
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">Giriş ($)</label>
             <input
               type="number"
               value={entryPrice}
               onChange={(e) => setEntryPrice(e.target.value)}
-              className="bg-black/20 border border-white/5 rounded-lg px-2.5 py-1.5 text-xs font-mono text-[var(--ink)] outline-none focus:border-[var(--line)] transition-colors"
+              className="bg-black/20 border border-white/5 rounded-lg px-2 py-1.5 text-xs font-mono text-[var(--ink)] outline-none focus:border-[var(--line)] transition-colors"
               placeholder="0.00"
             />
           </div>
           {/* Target Input */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] uppercase tracking-wider text-[var(--ink-faint)]">Hedef Fiyat</label>
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] uppercase tracking-wider text-emerald-400/80">Hedef ($)</label>
             <input
               type="number"
               value={targetPrice}
               onChange={(e) => setTargetPrice(e.target.value)}
-              className="bg-black/20 border border-white/5 rounded-lg px-2.5 py-1.5 text-xs font-mono text-[var(--ink)] outline-none focus:border-[var(--line)] transition-colors"
-              placeholder="Hedef girin"
+              className="bg-black/20 border border-emerald-500/20 rounded-lg px-2 py-1.5 text-xs font-mono text-emerald-300 outline-none focus:border-emerald-500/40 transition-colors"
+              placeholder="Hedef"
+            />
+          </div>
+          {/* Stop Input */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] uppercase tracking-wider text-rose-400/80 flex items-center gap-0.5">
+              <Shield size={9} /> Stop ($)
+            </label>
+            <input
+              type="number"
+              value={stopPrice}
+              onChange={(e) => setStopPrice(e.target.value)}
+              className="bg-black/20 border border-rose-500/20 rounded-lg px-2 py-1.5 text-xs font-mono text-rose-300 outline-none focus:border-rose-500/40 transition-colors"
+              placeholder="Stop"
             />
           </div>
         </div>

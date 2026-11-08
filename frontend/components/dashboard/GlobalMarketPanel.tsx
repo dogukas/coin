@@ -21,6 +21,7 @@ interface TrendingCoin {
 
 export default function GlobalMarketPanel() {
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
+  const setSymbol = useDashboardStore((s) => s.setSymbol);
   
   const [fearGreed, setFearGreed] = useState<{ value: number; classification: string }>({
     value: 50,
@@ -225,15 +226,28 @@ export default function GlobalMarketPanel() {
 
       {/* 2. En Çok Yükselenler */}
       <section className={cardClass} aria-label="En çok yükselenler">
-        <div className={chClass}>
-          <Flame className="w-4 h-4 flex-none text-[var(--warn)]" strokeWidth={1.8} />
-          <h2 className={h2Class}>En Çok Yükselenler (24s)</h2>
+        <div className="flex items-center justify-between gap-2 min-h-[22px]">
+          <div className="flex items-center gap-2">
+            <Flame className="w-4 h-4 flex-none text-[var(--warn)]" strokeWidth={1.8} />
+            <h2 className={h2Class}>En Çok Yükselenler (24s)</h2>
+          </div>
+          <span className="text-[9px] font-mono text-[var(--ink-faint)]">Tıkla &amp; Aç</span>
         </div>
         <ul className="list-none m-0 p-0 flex flex-col gap-1.5">
           {trendingCoins.length > 0 ? trendingCoins.map((coin, i) => {
             const base = coin.symbol.replace("USDT", "");
+            const isSelected = coin.symbol === activeSymbol;
             return (
-              <li key={coin.symbol} className="grid grid-cols-[14px_30px_minmax(0,1fr)_auto] items-center gap-2.5 p-2 px-2.5 rounded-xl bg-black/20">
+              <li
+                key={coin.symbol}
+                onClick={() => setSymbol(coin.symbol)}
+                title={`${base}/USDT grafiğini aç`}
+                className={`grid grid-cols-[14px_30px_minmax(0,1fr)_auto] items-center gap-2.5 p-2 px-2.5 rounded-xl cursor-pointer transition-all border ${
+                  isSelected
+                    ? "bg-emerald-500/15 border-emerald-500/40"
+                    : "bg-black/20 border-transparent hover:bg-white/[0.06] hover:border-white/10"
+                }`}
+              >
                 <span className="font-mono text-[11px] text-[var(--ink-faint)]">{i + 1}</span>
                 <span className="w-[30px] h-[30px] rounded-full grid place-items-center font-bold text-[10px] bg-[#34151f] border border-[var(--line)] text-[var(--ink)]">
                   {base.slice(0, 2)}

@@ -20,10 +20,10 @@ export default function IndicatorGrid() {
   const ind = signalData?.indicators;
   const currentPrice = signalData?.price ?? null;
 
-  // Real MACD histogram bars (last 20 candles) and real EMA20/EMA50 SVG points
-  const { macdHistBars, emaSvg } = useMemo(() => {
+  // Real MACD histogram bars (last 20 candles), EMA20/EMA50 SVG points, and CVD Smart Money Analysis
+  const { macdHistBars, emaSvg, cvdInfo } = useMemo(() => {
     if (!candles || candles.length < 35) {
-      return { macdHistBars: [] as number[], emaSvg: null };
+      return { macdHistBars: [] as number[], emaSvg: null, cvdInfo: null };
     }
     const macdRes = calculateMACD(candles, 12, 26, 9);
     const bars = macdRes.histogram.slice(-20).map((p) => p.value);
@@ -31,8 +31,68 @@ export default function IndicatorGrid() {
     const e20 = calculateEMA(candles, 20).slice(-20).map((p) => p.value);
     const e50 = calculateEMA(candles, 50).slice(-20).map((p) => p.value);
 
+    // CVD (Cumulative Volume Delta) & Divergence over last 16 candles
+    const recent = candles.slice(-16);
+    let cumDeltaUsd = 0;
+    let totalVolUsd = 0;
+    const cvdSeries: number[] = [];
+    for (const c of recent) {
+      const buyVol = c.taker_buy_volume ?? c.volume * 0.5;
+      const sellVol = Math.max(0, c.volume - buyVol);
+      const deltaUsd = (buyVol - sellVol) * c.close;
+      cumDeltaUsd += deltaUsd;
+      totalVolUsd += c.volume * c.close;
+      cvdSeries.push(cumDeltaUsd);
+    }
+
+    const firstPrice = recent[0]?.open || 1;
+    const lastPrice = recent[recent.length - 1]?.close || firstPrice;
+    const priceChangePct = ((lastPrice - firstPrice) / firstPrice) * 100;
+    const netDeltaRatio = totalVolUsd > 0 ? cumDeltaUsd / totalVolUsd : 0;
+
+    let badge = "⚖️ DENGELİ AKIŞ";
+    let tone: "pos" | "neg" | "neu" = "neu";
+    let summary = "Fiyat hareketi ve emir akışı dengeli ilerliyor.";
+
+    if (priceChangePct <= 0.35 && netDeltaRatio >= 0.06) {
+      badge = "🟢 GİZLİ TOPLAMA (POZİTİF CVD)";
+      tone = "pos";
+      summary = `Son 16 mumda fiyat yatay/sakin (%${priceChangePct.toFixed(2)}) kalırken içeriden net alıcı birikimi var (Patlama Öncesi Toplama).`;
+    } else if (priceChangePct >= 0.4 && netDeltaRatio <= -0.04) {
+      badge = "🛡️ TUZAK UYARISI (SAHTE PUMP)";
+      tone = "neg";
+      summary = `Fiyat yükselirken (%+${priceChangePct.toFixed(2)}) büyük emirler satış tarafında; sahte yükseliş (Bull Trap) riskine dikkat!`;
+    } else if (priceChangePct > 0.25 && netDeltaRatio > 0.05) {
+      badge = "🔥 GERÇEK PARA ONAYLI YÜKSELİŞ";
+      tone = "pos";
+      summary = `Fiyat yükselişi (%+${priceChangePct.toFixed(2)}) güçlü Taker alımlarıyla (pozitif CVD) destekleniyor.`;
+    } else if (netDeltaRatio <= -0.06) {
+      badge = "📉 AĞIR SATIŞ BASKISI";
+      tone = "neg";
+      summary = `Son mumlarda agresif piyasa satışları baskın; destek kırılımlarına dikkat edilmeli.`;
+    }
+
+    const cvdMin = Math.min(...cvdSeries);
+    const cvdMax = Math.max(...cvdSeries);
+    const cvdSpan = cvdMax - cvdMin || 1;
+    const cvdPts = cvdSeries
+      .map((v, idx) => {
+        const x = (idx / Math.max(1, cvdSeries.length - 1)) * 156 + 2;
+        const y = 34 - ((v - cvdMin) / cvdSpan) * 28;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+
+    const computedCvd = {
+      cumDeltaUsd,
+      badge,
+      tone,
+      summary,
+      cvdPts,
+    };
+
     if (e20.length < 2 || e50.length < 2) {
-      return { macdHistBars: bars, emaSvg: null };
+      return { macdHistBars: bars, emaSvg: null, cvdInfo: computedCvd };
     }
     const len = Math.min(e20.length, e50.length);
     const s20 = e20.slice(-len);
@@ -59,6 +119,7 @@ export default function IndicatorGrid() {
         pts50: toPts(s50),
         lastY20: Number(lastY20.toFixed(1)),
       },
+      cvdInfo: computedCvd,
     };
   }, [candles]);
 
@@ -342,17 +403,31 @@ export default function IndicatorGrid() {
         <p className={sClass}>Ortalamanın <b className="text-[var(--ink)] font-medium">{volRatioText}</b>&apos;ü</p>
       </section>
 
-      {/* 7. Alıcı / Satıcı Baskısı */}
+      {/* 7. Alıcı / Satıcı Baskısı & CVD Akıllı Para Analizi */}
       <section className={`${cardClass} md:col-span-2 lg:col-span-3`} aria-label="Alıcı satıcı baskısı">
-        <div className={chClass}>
-          <Layers className="w-4 h-4 text-[var(--ink-dim)]" />
-          <h2 className={h2Class}>Alıcı / Satıcı Baskısı (Taker Buy)</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 min-h-[22px]">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-[var(--ink-dim)]" />
+            <h2 className={h2Class}>Alıcı / Satıcı Baskısı &amp; CVD Akıllı Para Analizi</h2>
+          </div>
+          {cvdInfo && (
+            <span className={getStClass(cvdInfo.tone)}>
+              {cvdInfo.badge}
+            </span>
+          )}
         </div>
         <div className={vrowClass}>
           <div className={vClass}>%{buyPct.toFixed(1)} <span className="font-sans text-[18px]">Alım</span></div>
-          <span className={getStClass(buyPct > 50 ? "pos" : "neg")}>
-            {buyPct > 50 ? "Alıcılar güçlü" : "Satıcılar güçlü"}
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            {cvdInfo && (
+              <span className={`font-mono text-xs font-bold ${cvdInfo.cumDeltaUsd >= 0 ? "text-[var(--gain)]" : "text-[var(--loss)]"}`}>
+                Net CVD: {cvdInfo.cumDeltaUsd >= 0 ? "+" : "-"}${formatVolumeShort(Math.abs(cvdInfo.cumDeltaUsd))}
+              </span>
+            )}
+            <span className={getStClass(buyPct > 50 ? "pos" : "neg")}>
+              {buyPct > 50 ? "Alıcılar güçlü" : "Satıcılar güçlü"}
+            </span>
+          </div>
         </div>
         <div>
           <div className="flex h-[10px] rounded-full overflow-hidden gap-[2px]">
@@ -364,6 +439,28 @@ export default function IndicatorGrid() {
             <span className="text-[var(--loss)]">Satım %{(100 - buyPct).toFixed(1)}</span>
           </div>
         </div>
+
+        {/* CVD Uyumsuzluk & Akıllı Para Özeti + Mini Eğri */}
+        {cvdInfo && (
+          <div className="pt-2 border-t border-dashed border-[var(--line)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="m-0 text-xs text-[var(--ink)] font-sans leading-relaxed">
+              {cvdInfo.summary}
+            </p>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[10px] font-mono text-[var(--ink-dim)] uppercase">CVD Eğrisi (16m):</span>
+              <svg viewBox="0 0 160 38" className="w-28 h-7 block overflow-visible">
+                <polyline
+                  points={cvdInfo.cvdPts}
+                  fill="none"
+                  stroke={cvdInfo.cumDeltaUsd >= 0 ? "var(--gain)" : "var(--loss)"}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          </div>
+        )}
       </section>
 
     </div>

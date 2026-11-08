@@ -9,10 +9,23 @@ import type { CandleData, SignalPayload, SymbolInfo, TradeData } from "./utils";
 // Store Interface
 // ──────────────────────────────────────────────
 
+export interface ChartTradePlan {
+  symbol: string;
+  direction: "long" | "short";
+  entry: number;
+  sl: number;
+  tp1: number;
+  tp2: number;
+}
+
 interface DashboardState {
   // Active symbol & interval (persisted)
   activeSymbol: string;
   activeInterval: string;
+  favoriteSymbols: string[];
+
+  // Active trade plan drawn on chart & tracked in TradeTracker
+  chartTradePlan: ChartTradePlan | null;
 
   // Connection status
   wsConnected: boolean;
@@ -28,6 +41,8 @@ interface DashboardState {
   // Actions
   setSymbol: (symbol: string) => void;
   setInterval: (interval: string) => void;
+  toggleFavoriteSymbol: (symbol: string) => void;
+  setChartTradePlan: (plan: ChartTradePlan | null) => void;
   setConnected: (connected: boolean) => void;
   setCandles: (candles: CandleData[]) => void;
   updateCandle: (candle: CandleData) => void;
@@ -46,6 +61,8 @@ export const useDashboardStore = create<DashboardState>()(
       // Initial state
       activeSymbol: "BTCUSDT",
       activeInterval: "15m",
+      favoriteSymbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+      chartTradePlan: null,
       wsConnected: false,
       candles: [],
       signalData: null,
@@ -74,6 +91,18 @@ export const useDashboardStore = create<DashboardState>()(
           trades: [],
           wsConnected: false,
         }),
+
+      toggleFavoriteSymbol: (symbol: string) =>
+        set((state) => {
+          const exists = state.favoriteSymbols.includes(symbol);
+          return {
+            favoriteSymbols: exists
+              ? state.favoriteSymbols.filter((s) => s !== symbol)
+              : [...state.favoriteSymbols, symbol],
+          };
+        }),
+
+      setChartTradePlan: (plan: ChartTradePlan | null) => set({ chartTradePlan: plan }),
 
       setConnected: (connected: boolean) => set({ wsConnected: connected }),
 
@@ -124,6 +153,7 @@ export const useDashboardStore = create<DashboardState>()(
       partialize: (state) => ({
         activeSymbol: state.activeSymbol,
         activeInterval: state.activeInterval,
+        favoriteSymbols: state.favoriteSymbols,
       }),
       // Skip automatic hydration to prevent SSR mismatch
       skipHydration: true,

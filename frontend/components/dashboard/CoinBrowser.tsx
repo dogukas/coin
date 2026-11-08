@@ -16,15 +16,17 @@ import {
   Loader2,
   BarChart3,
   RefreshCw,
+  Star,
 } from "lucide-react";
 
-type TabKey = "popular" | "gainers" | "losers" | "strong_buys";
+type TabKey = "popular" | "favorites" | "strong_buys" | "gainers" | "losers";
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: "popular", label: "Popüler", icon: <Flame size={13} /> },
-  { key: "strong_buys", label: "🔥 Güçlü Alım", icon: <TrendingUp size={13} className="text-emerald-400" /> },
-  { key: "gainers", label: "Yükselenler", icon: <TrendingUp size={13} /> },
-  { key: "losers", label: "Düşenler", icon: <TrendingDown size={13} /> },
+  { key: "favorites", label: "Favori", icon: <Star size={12} className="text-amber-400 fill-amber-400" /> },
+  { key: "strong_buys", label: "🔥 Güçlü Al", icon: <TrendingUp size={13} className="text-emerald-400" /> },
+  { key: "gainers", label: "Yükselen", icon: <TrendingUp size={13} /> },
+  { key: "losers", label: "Düşen", icon: <TrendingDown size={13} /> },
 ];
 
 export default function CoinBrowser() {
@@ -41,6 +43,8 @@ export default function CoinBrowser() {
 
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   const setSymbol = useDashboardStore((s) => s.setSymbol);
+  const favoriteSymbols = useDashboardStore((s) => s.favoriteSymbols);
+  const toggleFavoriteSymbol = useDashboardStore((s) => s.toggleFavoriteSymbol);
 
   // Fetch logo map once
   useEffect(() => {
@@ -161,6 +165,15 @@ export default function CoinBrowser() {
     if (searchQuery.trim()) return searchResults;
     if (activeTab === "strong_buys") return strongBuys;
     if (!overview) return [];
+    if (activeTab === "favorites") {
+      const pool = new Map<string, MarketCoin>();
+      for (const c of [...overview.popular, ...overview.gainers, ...overview.losers, ...strongBuys]) {
+        pool.set(c.symbol, c);
+      }
+      return favoriteSymbols
+        .map((sym) => pool.get(sym))
+        .filter((c): c is MarketCoin => Boolean(c));
+    }
     switch (activeTab) {
       case "popular":
         return overview.popular;
@@ -171,7 +184,7 @@ export default function CoinBrowser() {
       default:
         return [];
     }
-  }, [searchQuery, searchResults, overview, activeTab, strongBuys]);
+  }, [searchQuery, searchResults, overview, activeTab, strongBuys, favoriteSymbols]);
 
   const handleSelectCoin = useCallback(
     (symbol: string) => {
@@ -234,13 +247,13 @@ export default function CoinBrowser() {
 
         {/* Tabs (hidden during search) */}
         {!searchQuery.trim() && (
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             {TABS.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 className={`
-                  flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold
+                  flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold
                   transition-all duration-200 cursor-pointer
                   ${
                     activeTab === tab.key
@@ -267,7 +280,7 @@ export default function CoinBrowser() {
           <div className="flex flex-col items-center justify-center py-10 text-gray-600">
             <Search size={20} className="mb-2 opacity-50" />
             <span className="text-[11px]">
-              {searchQuery ? "Sonuç bulunamadı" : "Veri yükleniyor..."}
+              {searchQuery ? "Sonuç bulunamadı" : activeTab === "favorites" ? "Henüz favori coin eklenmedi" : "Veri yükleniyor..."}
             </span>
           </div>
         ) : (
@@ -278,6 +291,8 @@ export default function CoinBrowser() {
                 coin={coin}
                 logo={logoMap[coin.symbol]}
                 isActive={coin.symbol === activeSymbol}
+                isFavorite={favoriteSymbols.includes(coin.symbol)}
+                onToggleFavorite={toggleFavoriteSymbol}
                 onClick={handleSelectCoin}
               />
             ))}
@@ -305,11 +320,15 @@ function CoinRow({
   coin,
   logo,
   isActive,
+  isFavorite,
+  onToggleFavorite,
   onClick,
 }: {
   coin: MarketCoin;
   logo?: string;
   isActive: boolean;
+  isFavorite: boolean;
+  onToggleFavorite: (symbol: string) => void;
   onClick: (symbol: string) => void;
 }) {
   const baseName = coin.symbol.replace("USDT", "");
@@ -317,8 +336,13 @@ function CoinRow({
   const changeBg = coin.change_24h >= 0 ? "rgba(0, 230, 118, 0.08)" : "rgba(239, 83, 80, 0.08)";
 
   return (
-    <button
+    <div
       onClick={() => onClick(coin.symbol)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onClick(coin.symbol);
+      }}
       className={`
         w-full flex items-center gap-2 px-3 py-2 rounded-xl
         transition-all duration-300 cursor-pointer group relative overflow-hidden
@@ -333,6 +357,21 @@ function CoinRow({
       {isActive && (
         <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
       )}
+      {/* Favorite Star Button */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleFavorite(coin.symbol);
+        }}
+        title={isFavorite ? "Favorilerden çıkar" : "Favorilere ekle"}
+        className="p-0.5 rounded hover:bg-white/10 transition-colors flex-shrink-0 cursor-pointer"
+      >
+        <Star
+          size={12}
+          className={isFavorite ? "text-amber-400 fill-amber-400" : "text-gray-600 hover:text-gray-300"}
+        />
+      </button>
       {/* Coin logo / icon */}
       {logo ? (
         <img
@@ -402,7 +441,7 @@ function CoinRow({
             : "text-gray-700 group-hover:text-gray-400"
         }`}
       />
-    </button>
+    </div>
   );
 }
 

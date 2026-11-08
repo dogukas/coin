@@ -3,12 +3,16 @@
 import React, { useState, useMemo } from "react";
 import { useDashboardStore } from "@/lib/store";
 import { formatPrice, getSignalLevel } from "@/lib/utils";
-import { Calculator, Target, Shield, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
+import { loadHistory, saveHistory } from "@/lib/radarHistory";
+import { toast } from "sonner";
+import { Calculator, Target, Shield, TrendingUp, TrendingDown, AlertTriangle, Crosshair, X } from "lucide-react";
 
 export default function TradeRiskCalculator() {
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   const candles = useDashboardStore((s) => s.candles);
   const signalData = useDashboardStore((s) => s.signalData);
+  const chartTradePlan = useDashboardStore((s) => s.chartTradePlan);
+  const setChartTradePlan = useDashboardStore((s) => s.setChartTradePlan);
 
   // Anlık fiyat
   const currentPrice = useMemo<number | null>(() => {
@@ -228,6 +232,66 @@ export default function TradeRiskCalculator() {
             <span className="text-[9px] text-emerald-400 font-sans font-bold">(+${calc.reward2Usd.toFixed(1)})</span>
           </div>
         </div>
+      </div>
+
+      {/* Grafiğe Çiz & Canlı Hedef Takibine Al Butonu */}
+      <div className="flex items-center gap-1.5 pt-1">
+        <button
+          onClick={() => {
+            const baseSymbol = activeSymbol.replace("USDT", "");
+            setChartTradePlan({
+              symbol: activeSymbol,
+              direction,
+              entry: calc.entry,
+              sl: calc.slPrice,
+              tp1: calc.tp1Price,
+              tp2: calc.tp2Price,
+            });
+            const prev = loadHistory();
+            const recordId = `BINANCE:${activeSymbol}`;
+            const filtered = prev.filter((r) => !(r.id === recordId && r.status === "open"));
+            saveHistory([
+              {
+                id: recordId,
+                symbol: baseSymbol,
+                exchange: "BINANCE",
+                ts: Date.now(),
+                score: signalData?.score ?? 70,
+                entry: calc.entry,
+                stop: calc.slPrice,
+                tp1: calc.tp1Price,
+                tp2: calc.tp2Price,
+                reasons: signalData?.reasons?.slice(0, 3) ?? ["Ana ekran TP/SL simülatörü"],
+                status: "open",
+                manual: true,
+              },
+              ...filtered,
+            ]);
+            toast.success(`🎯 ${baseSymbol} İşlem Planı Aktif!`, {
+              description: `Giriş $${formatPrice(calc.entry)} • TP1 $${formatPrice(calc.tp1Price)} • TP2 $${formatPrice(calc.tp2Price)} • Stop $${formatPrice(calc.slPrice)} mum grafiğine çizildi.`,
+              duration: 4500,
+            });
+          }}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 hover:from-emerald-500/30 hover:to-cyan-500/30 text-emerald-300 border border-emerald-400/40 font-sans font-bold text-[11px] transition-all cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+        >
+          <Crosshair size={13} className="text-emerald-400" />
+          <span>
+            {chartTradePlan?.symbol === activeSymbol ? "Planı Güncelle & Grafiğe Çiz" : "🎯 Grafiğe Çiz & Takibe Al"}
+          </span>
+        </button>
+
+        {chartTradePlan?.symbol === activeSymbol && (
+          <button
+            onClick={() => {
+              setChartTradePlan(null);
+              toast("Grafik üzerindeki TP/SL çizgileri temizlendi.");
+            }}
+            title="Grafikteki TP/SL çizgilerini kaldır"
+            className="p-2 rounded-xl bg-white/5 hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-white/10 hover:border-rose-500/30 transition-all cursor-pointer"
+          >
+            <X size={13} />
+          </button>
+        )}
       </div>
     </div>
   );
