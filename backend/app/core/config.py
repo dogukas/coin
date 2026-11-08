@@ -2,7 +2,7 @@
 Application configuration loaded from environment variables.
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 import os
 from dotenv import load_dotenv
@@ -13,6 +13,8 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file_
 
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
+
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
 
     # Binance API (optional for public market data)
     BINANCE_API_KEY: str = ""
@@ -50,10 +52,6 @@ class Settings(BaseSettings):
     def symbols_list(self) -> List[str]:
         """Parse comma-separated symbols into a list."""
         return [s.strip() for s in self.DEFAULT_SYMBOLS.split(",") if s.strip()]
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 
 # Singleton settings instance

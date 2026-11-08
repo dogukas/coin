@@ -1,13 +1,29 @@
 # Python
 venv/
-__pycache__/
+**/venv/
+.venv/
+**/__pycache__/
 *.pyc
-.env
+*.pyo
 .pytest_cache/
+*.db
+*.sqlite3
+candles.db
+backend/candles.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env.local
+!*.env.example
 
 # Node
 node_modules/
+**/node_modules/
 .next/
+**/.next/
 out/
 build/
 dist/
@@ -19,3 +35,4 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+*.log

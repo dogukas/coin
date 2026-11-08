@@ -2,9 +2,27 @@ import { NextResponse } from "next/server";
 
 export const revalidate = 300; // Cache 5 minutes
 
+interface TrendingItemPayload {
+  item?: {
+    symbol?: string;
+    name?: string;
+    large?: string;
+    small?: string;
+    thumb?: string;
+    market_cap_rank?: number | string;
+  };
+}
+
+interface TrendingResult {
+  symbol: string;
+  name: string;
+  image: string;
+  market_cap_rank: number;
+}
+
 export async function GET() {
   try {
-    let trending: any[] = [];
+    let trending: TrendingResult[] = [];
     try {
       const res = await fetch("https://api.coingecko.com/api/v3/search/trending", {
         headers: {
@@ -15,9 +33,9 @@ export async function GET() {
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json() as { coins?: TrendingItemPayload[] };
         if (Array.isArray(data?.coins)) {
-          trending = data.coins.map((c: any) => ({
+          trending = data.coins.map((c) => ({
             symbol: (c.item?.symbol || "").toUpperCase(),
             name: c.item?.name || "",
             image: c.item?.large || c.item?.small || c.item?.thumb || "",
@@ -34,7 +52,7 @@ export async function GET() {
     }
 
     return NextResponse.json(trending);
-  } catch (err: any) {
+  } catch (_err: unknown) {
     return NextResponse.json(FALLBACK_TRENDING);
   }
 }

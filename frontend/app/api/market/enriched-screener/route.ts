@@ -2,6 +2,21 @@ import { NextResponse } from "next/server";
 
 export const revalidate = 60; // Cache for 60 seconds
 
+interface CoinGeckoRawMarketCoin {
+  symbol?: string;
+  current_price?: number;
+  price_change_percentage_24h?: number;
+  total_volume?: number;
+  image?: string;
+  market_cap?: number;
+  market_cap_rank?: number;
+  circulating_supply?: number;
+  ath_change_percentage?: number;
+  sparkline_in_7d?: {
+    price?: number[];
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -11,7 +26,7 @@ export async function GET(request: Request) {
     // Fetch top coins with 7-day sparkline from CoinGecko
     const cgUrl = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${limit}&page=1&sparkline=true`;
     
-    let items: any[] = [];
+    let items: CoinGeckoRawMarketCoin[] = [];
     try {
       const res = await fetch(cgUrl, {
         headers: {
@@ -22,7 +37,7 @@ export async function GET(request: Request) {
       });
 
       if (res.ok) {
-        items = await res.json();
+        items = (await res.json()) as CoinGeckoRawMarketCoin[];
       }
     } catch (fetchErr) {
       console.warn("CoinGecko markets fetch error:", fetchErr);
@@ -33,7 +48,7 @@ export async function GET(request: Request) {
       items = FALLBACK_COINS;
     }
 
-    const enriched = items.map((coin: any) => {
+    const enriched = items.map((coin: CoinGeckoRawMarketCoin) => {
       const rawSymbol = (coin.symbol || "").toUpperCase();
       const symbol = rawSymbol.endsWith("USDT") ? rawSymbol : `${rawSymbol}USDT`;
       const price = Number(coin.current_price) || 0;
@@ -100,8 +115,9 @@ export async function GET(request: Request) {
     enriched.sort((a, b) => a.market_cap_rank - b.market_cap_rank);
 
     return NextResponse.json(enriched);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed" }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

@@ -177,7 +177,7 @@ export function getSignalGlow(score: number): string {
 // Formatting utilities
 // ──────────────────────────────────────────────
 
-export function formatPrice(price: number, symbol?: string): string {
+export function formatPrice(price: number, _symbol?: string): string {
   if (price >= 1000) {
     return price.toLocaleString("en-US", {
       minimumFractionDigits: 2,

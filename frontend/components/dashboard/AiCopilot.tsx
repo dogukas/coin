@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bot, Sparkles, Target, ShieldAlert, Crosshair } from "lucide-react";
 import { useDashboardStore } from "@/lib/store";
-
-const formatPrice = (p: number) => {
-  if (p < 0.001) return "$" + p.toFixed(6);
-  if (p < 1) return "$" + p.toFixed(4);
-  if (p < 10) return "$" + p.toFixed(3);
-  return "$" + p.toFixed(2);
-};
 
 export default function AiCopilot() {
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
@@ -48,7 +40,6 @@ export default function AiCopilot() {
     const vwap = ind.vwap;
     const bbUpper = ind.bb_upper;
     const bbLower = ind.bb_lower;
-    const ema200 = ind.ema_200;
     
     let entry: number | undefined;
     let target: number | undefined;
@@ -228,29 +219,6 @@ export default function AiCopilot() {
   const cancelAction = () => {
     setConfirmOpen(false);
   };
-
-  // Calculate percentages for the track pins
-  let entryPos = "50%";
-  let targetPos = "0%";
-  let stopPos = "100%";
-  let targetVal = advice.target || 0;
-  let entryVal = advice.entry || 0;
-  let stopVal = advice.stopLoss || 0;
-
-  if (entryVal && targetVal && stopVal) {
-    const totalRange = Math.abs(stopVal - targetVal);
-    if (totalRange > 0) {
-      if (advice.type === "bullish" || advice.type === "neutral") {
-        // Bullish: Stop is lower, Target is higher
-        // Track visual: left is stop (red), right is target (green)
-        // Actually, the HTML scale has green on left, red on right. Let's adapt.
-      }
-    }
-  }
-
-  // To match the HTML exactly: 
-  // track .win { background: linear-gradient(90deg, rgba(47,214,161,.15), var(--gain)); }
-  // track .lose { background: linear-gradient(90deg, var(--loss), rgba(255,90,110,.15)); }
 
   return (
     <div className={`@container w-full max-w-[420px] bg-gradient-to-br ${t.card} border ${t.line} rounded-[22px] p-4 @sm:p-5 flex flex-col gap-4 @sm:gap-[18px] ${t.shadow} font-sans`}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useDashboardStore } from "@/lib/store";
 import { formatNumber } from "@/lib/utils";
 import { Anchor } from "lucide-react";
@@ -18,8 +18,16 @@ export default function WhaleTracker() {
   
   const [whaleTrades, setWhaleTrades] = useState<WhaleTrade[]>([]);
   const [flashingId, setFlashingId] = useState<string | null>(null);
+  const prevSymbolRef = useRef(activeSymbol);
+  const flashTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    if (prevSymbolRef.current !== activeSymbol) {
+      prevSymbolRef.current = activeSymbol;
+      setWhaleTrades([]);
+      return;
+    }
+
     if (!trades || trades.length === 0) return;
     
     const latestTrade = trades[0];
@@ -35,21 +43,22 @@ export default function WhaleTracker() {
         if (isDuplicate) return prev;
         
         const newTrade = { ...latestTrade, value: tradeValue };
-        const newArr = [newTrade, ...prev].slice(0, 15); // Keep last 15 whale trades
-        return newArr;
+        return [newTrade, ...prev].slice(0, 15);
       });
       
       // Flash effect
       const id = `${latestTrade.time}-${latestTrade.quantity}`;
       setFlashingId(id);
-      setTimeout(() => setFlashingId(null), 1000);
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = setTimeout(() => setFlashingId(null), 1000);
     }
-  }, [trades]);
+  }, [trades, activeSymbol]);
 
-  // Clear whales when symbol changes
   useEffect(() => {
-    setWhaleTrades([]);
-  }, [activeSymbol]);
+    return () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    };
+  }, []);
 
   const cardClass = "min-w-0 bg-gradient-to-br from-[var(--card-2)] to-[var(--card)] border border-[var(--line)] rounded-[18px] p-4 flex flex-col gap-3 flex-1 min-h-[220px]";
   const chClass = "flex items-center gap-2 min-h-[22px]";

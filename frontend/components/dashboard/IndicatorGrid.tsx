@@ -5,7 +5,6 @@ import { formatPrice } from "@/lib/utils";
 import {
   Activity,
   BarChart3,
-  TrendingDown,
   TrendingUp,
   Waves,
   Maximize2,
@@ -282,7 +281,7 @@ export default function IndicatorGrid() {
             <span>0</span><span>20 MA: {ind?.volume_ma ? formatVolumeShort(ind.volume_ma) : "—"}</span>
           </div>
         </div>
-        <p className={sClass}>Ortalamanın <b className="text-[var(--ink)] font-medium">{volRatioText}</b>'ü</p>
+        <p className={sClass}>Ortalamanın <b className="text-[var(--ink)] font-medium">{volRatioText}</b>&apos;ü</p>
       </section>
 
       {/* 7. Alıcı / Satıcı Baskısı */}

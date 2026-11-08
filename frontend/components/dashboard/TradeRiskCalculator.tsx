@@ -24,13 +24,14 @@ export default function TradeRiskCalculator() {
   const [stopPercent, setStopPercent] = useState<number>(2.0); // %2.0 stop mesafesi
 
   // Sinyal bölgesi (backend ile aynı bantlar): AL >= 56, SAT <= 35, aradaki NÖTR.
+  const signalScore = signalData?.score;
   const signalZone: "long" | "short" | "neutral" = useMemo(() => {
-    if (signalData?.score === undefined || signalData?.score === null) return "neutral";
-    const level = getSignalLevel(signalData.score);
+    if (signalScore === undefined || signalScore === null) return "neutral";
+    const level = getSignalLevel(signalScore);
     if (level === "buy" || level === "strong_buy") return "long";
     if (level === "sell") return "short";
     return "neutral";
-  }, [signalData?.score]);
+  }, [signalScore]);
 
   // Sadece bölge DEĞİŞİNCE yönü sinyale eşle. Nötr bölgede kullanıcının seçimi korunur,
   // ve her sinyal güncellemesinde manuel LONG/SHORT seçimi ezilmez.

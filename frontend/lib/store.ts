@@ -42,7 +42,7 @@ interface DashboardState {
 
 export const useDashboardStore = create<DashboardState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       // Initial state
       activeSymbol: "BTCUSDT",
       activeInterval: "15m",

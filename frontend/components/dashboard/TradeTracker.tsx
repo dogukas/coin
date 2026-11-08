@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useDashboardStore } from "@/lib/store";
 import { Target, TrendingUp, TrendingDown } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
@@ -11,10 +11,12 @@ export default function TradeTracker() {
   
   const [entryPrice, setEntryPrice] = useState<string>("");
   const [targetPrice, setTargetPrice] = useState<string>("");
+  const hasInitializedRef = useRef(false);
   
-  // Set initial entry price to current price if empty
+  // Set initial entry price to current price once
   useEffect(() => {
-    if (currentPrice > 0 && entryPrice === "") {
+    if (!hasInitializedRef.current && currentPrice > 0 && entryPrice === "") {
+      hasInitializedRef.current = true;
       setEntryPrice(currentPrice.toString());
     }
   }, [currentPrice, entryPrice]);

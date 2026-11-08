@@ -70,6 +70,7 @@ export default function DepthChart() {
     ];
 
     setLoading(true);
+    let hasLoaded = false;
 
     const connect = () => {
       if (!isMounted) return;
@@ -116,6 +117,7 @@ export default function DepthChart() {
         }
         
         if (data && data.bids && data.asks && data.bids.length > 0) {
+          hasLoaded = true;
           setLoading(false);
           let cumulativeBids = 0;
           // Bids are sorted descending by price (best bid first). We reverse for x-axis.
@@ -143,7 +145,7 @@ export default function DepthChart() {
         }
       };
 
-      ws.onerror = (err) => {
+      ws.onerror = () => {
         console.error(`Depth WS error on ${url}`);
         handleFallback();
       };
@@ -151,7 +153,7 @@ export default function DepthChart() {
       ws.onclose = () => {
         if (isMounted) {
           // If we close unexpectedly and we haven't loaded yet, try fallback
-          if (loading) {
+          if (!hasLoaded) {
             handleFallback();
           } else {
             setTimeout(() => connect(), 5000);

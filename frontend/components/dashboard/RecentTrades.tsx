@@ -16,6 +16,14 @@ interface TradeItem {
   isSell: boolean;
 }
 
+interface MexcTradeRaw {
+  id?: string | number;
+  price: string | number;
+  qty: string | number;
+  time: number;
+  isBuyerMaker?: boolean;
+}
+
 export default function RecentTrades({ symbol, exchange = "binance" }: RecentTradesProps) {
   const [trades, setTrades] = useState<TradeItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,12 +42,12 @@ export default function RecentTrades({ symbol, exchange = "binance" }: RecentTra
         try {
           const res = await fetch(`/api/mexc?endpoint=deals&symbol=${symbol}&limit=30`);
           if (res.ok) {
-            const data = await res.json();
+            const data = (await res.json()) as MexcTradeRaw[];
             if (Array.isArray(data)) {
-              const formatted: TradeItem[] = data.map((d: any) => ({
+              const formatted: TradeItem[] = data.map((d: MexcTradeRaw) => ({
                 id: d.id || `${d.time}-${Math.random()}`,
-                price: parseFloat(d.price),
-                qty: parseFloat(d.qty),
+                price: Number(d.price) || 0,
+                qty: Number(d.qty) || 0,
                 time: new Date(d.time).toLocaleTimeString([], { hour12: false, minute: "2-digit", second: "2-digit" }),
                 isSell: !d.isBuyerMaker,
               }));

@@ -2,12 +2,20 @@ import { NextResponse } from "next/server";
 
 export const revalidate = 60; // 1 minute cache
 
+interface OverviewMarketCoin {
+  symbol?: string;
+  current_price?: number;
+  price_change_percentage_24h?: number;
+  total_volume?: number;
+  image?: string;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "30", 10);
 
-    let coins: any[] = [];
+    let coins: OverviewMarketCoin[] = [];
     try {
       const res = await fetch(
         `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=60&page=1&sparkline=false`,
@@ -20,7 +28,7 @@ export async function GET(request: Request) {
         }
       );
       if (res.ok) {
-        coins = await res.json();
+        coins = (await res.json()) as OverviewMarketCoin[];
       }
     } catch (err) {
       console.warn("Overview CG fetch error:", err);
@@ -30,7 +38,7 @@ export async function GET(request: Request) {
       coins = FALLBACK_ITEMS;
     }
 
-    const formatted = coins.map((c: any) => {
+    const formatted = coins.map((c: OverviewMarketCoin) => {
       const raw = (c.symbol || "").toUpperCase();
       const symbol = raw.endsWith("USDT") ? raw : `${raw}USDT`;
       return {
@@ -52,7 +60,7 @@ export async function GET(request: Request) {
       top_volume: topVolume.slice(0, limit),
       coins: formatted.slice(0, limit),
     });
-  } catch (err: any) {
+  } catch (_err: unknown) {
     return NextResponse.json({
       gainers: [],
       losers: [],

@@ -268,7 +268,10 @@ export default function GlobalMarketPanel() {
             </svg>
           ) : (
             <div className="h-[60px] w-full flex items-center justify-center text-[10px] text-[var(--ink-faint)]">
-               Veri bekleniyor...
+              {pressureLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin text-[var(--ink-dim)] mr-1.5" />
+              ) : null}
+              {pressureLoading ? "Yükleniyor..." : "Veri bekleniyor..."}
             </div>
           )}
         </div>

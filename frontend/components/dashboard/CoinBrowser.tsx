@@ -5,7 +5,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useDashboardStore } from "@/lib/store";
-import { formatPrice, formatPercent, API_URL } from "@/lib/utils";
+import { formatPrice, API_URL } from "@/lib/utils";
 import type { MarketCoin, MarketOverview } from "@/lib/utils";
 import {
   Search,

@@ -4,14 +4,10 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
-  LayoutGrid,
   TrendingUp,
   TrendingDown,
   RefreshCw,
   Loader2,
-  Activity,
-  Layers,
-  History,
   Coins
 } from "lucide-react";
 import OrderBook from "@/components/dashboard/OrderBook";

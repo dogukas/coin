@@ -27,11 +27,8 @@ import {
   PanelLeftClose,
   PanelLeft,
   LayoutGrid,
-  Map,
   Target,
   Home,
-  BarChart3,
-  Fish,
   Coins,
   Sparkles
 } from "lucide-react";

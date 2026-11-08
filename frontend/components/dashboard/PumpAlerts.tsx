@@ -19,7 +19,6 @@ interface PumpAlert {
 }
 
 export default function PumpAlerts() {
-  const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   const setSymbol = useDashboardStore((s) => s.setSymbol);
   
   // Keep track of recently alerted symbols to avoid spamming the same alert
@@ -72,6 +71,7 @@ export default function PumpAlerts() {
                         {isExtreme ? <Flame size={16} className="animate-pulse" /> : isPump ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                       </div>
                       <div>
+                        <div className="text-[10px] uppercase font-bold tracking-wider text-gray-300">{title}</div>
                         <span className="font-bold text-white text-base">{baseName}</span>
                         <span className="text-[10px] text-gray-400 ml-1">/USDT</span>
                       </div>

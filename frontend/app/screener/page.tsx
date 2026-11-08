@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowLeft, Loader2, LayoutGrid, ArrowUpRight, ArrowDownRight,
-  Activity, TrendingUp, Search, RefreshCw, Flame, BarChart2, Zap
+  TrendingUp, Search, RefreshCw, Flame, BarChart2, Zap
 } from "lucide-react";
 import { getSignalColor, formatPrice, API_URL } from "@/lib/utils";
 
@@ -73,14 +72,14 @@ export default function ScreenerPage() {
     try {
       setLoading(true);
       // Önce Render backend (gerçek Binance TA), başarısız/boş ise Next.js rotaları
-      const getJson = async (path: string): Promise<any[] | null> => {
+      const getJson = async <T,>(path: string): Promise<T[] | null> => {
         const bases = API_URL ? [API_URL, ""] : [""];
         for (const b of bases) {
           try {
             const r = await fetch(`${b}${path}`);
             if (!r.ok) continue;
             const d = await r.json();
-            if (Array.isArray(d) && d.length > 0) return d;
+            if (Array.isArray(d) && d.length > 0) return d as T[];
           } catch {
             // sıradaki kaynağa geç
           }
@@ -89,8 +88,8 @@ export default function ScreenerPage() {
       };
 
       const [coinsData, trendData] = await Promise.all([
-        getJson("/api/market/enriched-screener?limit=60"),
-        getJson("/api/market/coingecko/trending"),
+        getJson<EnrichedCoin>("/api/market/enriched-screener?limit=60"),
+        getJson<TrendingCoin>("/api/market/coingecko/trending"),
       ]);
 
       if (coinsData) {
@@ -113,7 +112,7 @@ export default function ScreenerPage() {
 
   // ── Filtreleme + Sıralama ────────────────────────────────────────────────
   const displayed = useMemo(() => {
-    let list = coins.filter((c) => {
+    const list = coins.filter((c) => {
       if (search && !c.symbol.toLowerCase().includes(search.toLowerCase())) return false;
       if (filter === "strong_buy"    && c.signal_score < 65)                  return false;
       if (filter === "high_pressure" && c.buy_pressure_pct < 60)              return false;
