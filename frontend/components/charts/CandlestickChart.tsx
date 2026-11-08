@@ -1,11 +1,12 @@
 "use client";
 
 // TradingView Lightweight Charts v5 integration with real-time updates
-// Renders candlestick chart with volume, full EMA overlay paths, and Bollinger Bands
+// Renders candlestick chart with volume, full EMA overlay paths, Bollinger Bands, VWAP, and interactive toggles
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
+  createSeriesMarkers,
   ColorType,
   CrosshairMode,
   CandlestickSeries,
@@ -13,13 +14,24 @@ import {
   LineSeries,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type CandlestickData,
   type HistogramData,
   type Time,
 } from "lightweight-charts";
 import { useDashboardStore } from "@/lib/store";
-import { calculateEMA, calculateBollingerBands, calculateRSI, calculateMACD } from "@/lib/indicators";
+import {
+  calculateEMA,
+  calculateBollingerBands,
+  calculateRSI,
+  calculateMACD,
+  calculateVWAP,
+  calculateSignalMarkers,
+  type ChartSignalMarker,
+} from "@/lib/indicators";
 import { formatNumber } from "@/lib/utils";
+
+type MarkersPluginApi = ISeriesMarkersPluginApi<Time>;
 
 export default function CandlestickChart() {
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -32,7 +44,10 @@ export default function CandlestickChart() {
   const bbUpperRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbMiddleRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
-  
+  const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const markersPluginRef = useRef<MarkersPluginApi | null>(null);
+  const currentMarkersRef = useRef<ChartSignalMarker[]>([]);
+
   // RSI & MACD References
   const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdLineRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -46,6 +61,16 @@ export default function CandlestickChart() {
 
   const candles = useDashboardStore((s) => s.candles);
   const signalData = useDashboardStore((s) => s.signalData);
+
+  // Indicator toggles state
+  const [toggles, setToggles] = useState({
+    ema: true,
+    bb: true,
+    vwap: true,
+    signals: true,
+    rsi: false,
+    macd: false,
+  });
 
   // Initialize chart
   useEffect(() => {
@@ -74,7 +99,7 @@ export default function CandlestickChart() {
       },
       rightPriceScale: {
         borderColor: "rgba(255, 255, 255, 0.1)",
-        scaleMargins: { top: 0.05, bottom: 0.35 },
+        scaleMargins: { top: 0.08, bottom: 0.35 },
         autoScale: true,
       },
       timeScale: {
@@ -96,7 +121,7 @@ export default function CandlestickChart() {
       wickDownColor: "#ef5350",
     });
 
-    // Dedicated independent scale for volume to prevent contaminating price scale
+    // Dedicated independent scale for volume
     const volumeSeries = chart.addSeries(HistogramSeries, {
       color: "#26a69a",
       priceFormat: { type: "volume" },
@@ -104,7 +129,7 @@ export default function CandlestickChart() {
     });
 
     chart.priceScale("volume_scale").applyOptions({
-      scaleMargins: { top: 0.65, bottom: 0.35 },
+      scaleMargins: { top: 0.72, bottom: 0.32 },
       visible: false,
     });
 
@@ -115,10 +140,11 @@ export default function CandlestickChart() {
       priceScaleId: "rsi_scale",
       priceLineVisible: false,
       lastValueVisible: false,
+      visible: toggles.rsi,
     });
 
     chart.priceScale("rsi_scale").applyOptions({
-      scaleMargins: { top: 0.70, bottom: 0.15 },
+      scaleMargins: { top: 0.75, bottom: 0.12 },
       visible: false,
     });
 
@@ -127,6 +153,7 @@ export default function CandlestickChart() {
       priceScaleId: "macd_scale",
       priceLineVisible: false,
       lastValueVisible: false,
+      visible: toggles.macd,
     });
     
     const macdLineSeries = chart.addSeries(LineSeries, {
@@ -135,6 +162,7 @@ export default function CandlestickChart() {
       priceScaleId: "macd_scale",
       priceLineVisible: false,
       lastValueVisible: false,
+      visible: toggles.macd,
     });
     
     const macdSignalSeries = chart.addSeries(LineSeries, {
@@ -143,10 +171,11 @@ export default function CandlestickChart() {
       priceScaleId: "macd_scale",
       priceLineVisible: false,
       lastValueVisible: false,
+      visible: toggles.macd,
     });
 
     chart.priceScale("macd_scale").applyOptions({
-      scaleMargins: { top: 0.85, bottom: 0 },
+      scaleMargins: { top: 0.88, bottom: 0 },
       visible: false,
     });
 
@@ -157,6 +186,7 @@ export default function CandlestickChart() {
       title: "EMA20",
       priceLineVisible: false,
       lastValueVisible: true,
+      visible: toggles.ema,
     });
 
     const ema50Series = chart.addSeries(LineSeries, {
@@ -165,6 +195,7 @@ export default function CandlestickChart() {
       title: "EMA50",
       priceLineVisible: false,
       lastValueVisible: true,
+      visible: toggles.ema,
     });
 
     const ema200Series = chart.addSeries(LineSeries, {
@@ -173,35 +204,53 @@ export default function CandlestickChart() {
       title: "EMA200",
       priceLineVisible: false,
       lastValueVisible: true,
+      visible: toggles.ema,
     });
 
     // Bollinger Bands (v5 API)
     const bbUpper = chart.addSeries(LineSeries, {
-      color: "rgba(186, 104, 200, 0.7)",
+      color: "rgba(186, 104, 200, 0.75)",
       lineWidth: 1,
       lineStyle: 2, // Dashed
       title: "BB Üst",
       priceLineVisible: false,
       lastValueVisible: false,
+      visible: toggles.bb,
     });
 
     const bbMiddle = chart.addSeries(LineSeries, {
-      color: "rgba(186, 104, 200, 0.4)",
+      color: "rgba(186, 104, 200, 0.45)",
       lineWidth: 1,
       lineStyle: 3, // Dotted
       title: "BB Orta",
       priceLineVisible: false,
       lastValueVisible: false,
+      visible: toggles.bb,
     });
 
     const bbLower = chart.addSeries(LineSeries, {
-      color: "rgba(186, 104, 200, 0.7)",
+      color: "rgba(186, 104, 200, 0.75)",
       lineWidth: 1,
       lineStyle: 2, // Dashed
       title: "BB Alt",
       priceLineVisible: false,
       lastValueVisible: false,
+      visible: toggles.bb,
     });
+
+    // VWAP Line (Neon Magenta)
+    const vwapSeries = chart.addSeries(LineSeries, {
+      color: "#e040fb",
+      lineWidth: 2,
+      title: "VWAP",
+      priceLineVisible: false,
+      lastValueVisible: true,
+      visible: toggles.vwap,
+    });
+
+    // Series Markers Plugin (v5 API)
+    const markersPlugin = createSeriesMarkers(candleSeries);
+    markersPluginRef.current = markersPlugin;
 
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
@@ -211,8 +260,8 @@ export default function CandlestickChart() {
     ema200SeriesRef.current = ema200Series;
     bbUpperRef.current = bbUpper;
     bbMiddleRef.current = bbMiddle;
-    bbMiddleRef.current = bbMiddle;
     bbLowerRef.current = bbLower;
+    vwapSeriesRef.current = vwapSeries;
     
     rsiSeriesRef.current = rsiSeries;
     macdHistRef.current = macdHistSeries;
@@ -235,6 +284,25 @@ export default function CandlestickChart() {
     };
   }, []);
 
+  // Update visibility on toggle changes
+  useEffect(() => {
+    ema20SeriesRef.current?.applyOptions({ visible: toggles.ema });
+    ema50SeriesRef.current?.applyOptions({ visible: toggles.ema });
+    ema200SeriesRef.current?.applyOptions({ visible: toggles.ema });
+    bbUpperRef.current?.applyOptions({ visible: toggles.bb });
+    bbMiddleRef.current?.applyOptions({ visible: toggles.bb });
+    bbLowerRef.current?.applyOptions({ visible: toggles.bb });
+    vwapSeriesRef.current?.applyOptions({ visible: toggles.vwap });
+    rsiSeriesRef.current?.applyOptions({ visible: toggles.rsi });
+    macdHistRef.current?.applyOptions({ visible: toggles.macd });
+    macdLineRef.current?.applyOptions({ visible: toggles.macd });
+    macdSignalRef.current?.applyOptions({ visible: toggles.macd });
+
+    if (markersPluginRef.current) {
+      markersPluginRef.current.setMarkers(toggles.signals ? currentMarkersRef.current : []);
+    }
+  }, [toggles]);
+
   // Symbol or interval switch detection: clean up old series
   useEffect(() => {
     const currentKey = `${activeSymbol}_${activeInterval}`;
@@ -251,6 +319,9 @@ export default function CandlestickChart() {
       bbUpperRef.current?.setData([]);
       bbMiddleRef.current?.setData([]);
       bbLowerRef.current?.setData([]);
+      vwapSeriesRef.current?.setData([]);
+      markersPluginRef.current?.setMarkers([]);
+      currentMarkersRef.current = [];
       
       rsiSeriesRef.current?.setData([]);
       macdHistRef.current?.setData([]);
@@ -291,14 +362,18 @@ export default function CandlestickChart() {
       const ema50Data = calculateEMA(candles, 50);
       const ema200Data = calculateEMA(candles, 200);
       const bbData = calculateBollingerBands(candles, 20, 2.0);
+      const vwapData = calculateVWAP(candles);
       const rsiData = calculateRSI(candles, 14);
       const macdData = calculateMACD(candles);
+      const signalMarkers = calculateSignalMarkers(candles);
       
+      currentMarkersRef.current = signalMarkers;
+
       // MACD Histogram colors
-      const macdHistFormatted: HistogramData<Time>[] = macdData.histogram.map(p => ({
+      const macdHistFormatted: HistogramData<Time>[] = macdData.histogram.map((p) => ({
         time: p.time,
         value: p.value,
-        color: p.value >= 0 ? "rgba(0, 230, 118, 0.6)" : "rgba(239, 83, 80, 0.6)"
+        color: p.value >= 0 ? "rgba(0, 230, 118, 0.6)" : "rgba(239, 83, 80, 0.6)",
       }));
 
       // Populate chart series
@@ -310,7 +385,12 @@ export default function CandlestickChart() {
       bbUpperRef.current?.setData(bbData.upper);
       bbMiddleRef.current?.setData(bbData.middle);
       bbLowerRef.current?.setData(bbData.lower);
+      vwapSeriesRef.current?.setData(vwapData);
       
+      if (markersPluginRef.current) {
+        markersPluginRef.current.setMarkers(toggles.signals ? signalMarkers : []);
+      }
+
       rsiSeriesRef.current?.setData(rsiData);
       macdHistRef.current?.setData(macdHistFormatted);
       macdLineRef.current?.setData(macdData.macdLine);
@@ -364,67 +444,165 @@ export default function CandlestickChart() {
         if (ind.bb_lower !== null) {
           bbLowerRef.current?.update({ time: lastTime, value: ind.bb_lower });
         }
-        
-        // Note: RSI and MACD are not currently streamed continuously from Binance ticker.
-        // For a full production bot, we would calculate incremental RSI/MACD here or rely on the backend.
-        // We will just let the full update cycle (which happens on candle close) refresh them, or 
-        // we could calculate incremental ones here if needed.
+        if (ind.vwap !== null) {
+          vwapSeriesRef.current?.update({ time: lastTime, value: ind.vwap });
+        }
         if (ind.rsi !== null && ind.rsi !== undefined) {
-           rsiSeriesRef.current?.update({ time: lastTime, value: ind.rsi });
+          rsiSeriesRef.current?.update({ time: lastTime, value: ind.rsi });
         }
         if (ind.macd_histogram !== null && ind.macd_line !== null && ind.macd_signal !== null) {
-           macdHistRef.current?.update({ 
-             time: lastTime, 
-             value: ind.macd_histogram, 
-             color: ind.macd_histogram >= 0 ? "rgba(0, 230, 118, 0.6)" : "rgba(239, 83, 80, 0.6)" 
-           });
-           macdLineRef.current?.update({ time: lastTime, value: ind.macd_line });
-           macdSignalRef.current?.update({ time: lastTime, value: ind.macd_signal });
+          macdHistRef.current?.update({ 
+            time: lastTime, 
+            value: ind.macd_histogram, 
+            color: ind.macd_histogram >= 0 ? "rgba(0, 230, 118, 0.6)" : "rgba(239, 83, 80, 0.6)" 
+          });
+          macdLineRef.current?.update({ time: lastTime, value: ind.macd_line });
+          macdSignalRef.current?.update({ time: lastTime, value: ind.macd_signal });
         }
       }
     }
-  }, [candles, signalData]);
+  }, [candles, signalData, toggles.signals]);
 
   const ind = signalData?.indicators;
 
   return (
-    <div className="relative w-full h-full min-h-[400px] flex-1">
-      <div ref={chartContainerRef} className="absolute inset-0" />
-      {/* Chart legend overlay with live values */}
-      <div className="absolute top-3 left-3 flex flex-wrap items-center gap-3 text-[11px] font-mono backdrop-blur-sm bg-black/40 px-3 py-1.5 rounded-lg border border-white/5 pointer-events-none">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#00bcd4" }} />
-          <span className="text-cyan-400 font-semibold">EMA20</span>
-          {ind?.ema_20 && (
-            <span className="text-white/80 tabular-nums">{formatNumber(ind.ema_20)}</span>
+    <div className="relative w-full h-full min-h-[400px] flex-1 flex flex-col">
+      {/* Top Chart Controls & Legend */}
+      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 px-3 border-b border-white/5 bg-black/40 backdrop-blur-sm z-20">
+        {/* Left: Dynamic Live Indicator Values */}
+        <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono">
+          {toggles.ema && (
+            <>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#00bcd4" }} />
+                <span className="text-cyan-400 font-semibold">EMA20</span>
+                {ind?.ema_20 && (
+                  <span className="text-white/80 tabular-nums">{formatNumber(ind.ema_20)}</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#ff9800" }} />
+                <span className="text-amber-400 font-semibold">EMA50</span>
+                {ind?.ema_50 && (
+                  <span className="text-white/80 tabular-nums">{formatNumber(ind.ema_50)}</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#b0bec5" }} />
+                <span className="text-gray-300 font-semibold">EMA200</span>
+                {ind?.ema_200 && (
+                  <span className="text-white/80 tabular-nums">{formatNumber(ind.ema_200)}</span>
+                )}
+              </div>
+            </>
+          )}
+
+          {toggles.bb && ind?.bb_upper && ind?.bb_lower && (
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-purple-400" />
+              <span className="text-purple-300 font-semibold">BB(20,2)</span>
+              <span className="text-white/60 tabular-nums text-[10px]">
+                [{formatNumber(ind.bb_lower)} - {formatNumber(ind.bb_upper)}]
+              </span>
+            </div>
+          )}
+
+          {toggles.vwap && ind?.vwap && (
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-fuchsia-400" />
+              <span className="text-fuchsia-300 font-semibold">VWAP</span>
+              <span className="text-white/80 tabular-nums">{formatNumber(ind.vwap)}</span>
+            </div>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#ff9800" }} />
-          <span className="text-amber-400 font-semibold">EMA50</span>
-          {ind?.ema_50 && (
-            <span className="text-white/80 tabular-nums">{formatNumber(ind.ema_50)}</span>
-          )}
-        </div>
+        {/* Right: Interactive Indicator Layer Toggles */}
+        <div className="flex items-center gap-1.5 bg-black/50 p-1 rounded-xl border border-white/10">
+          <button
+            onClick={() => setToggles((t) => ({ ...t, ema: !t.ema }))}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-medium transition-all cursor-pointer ${
+              toggles.ema
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.25)]"
+                : "text-gray-400 hover:text-gray-200 border border-transparent"
+            }`}
+            title="EMA 20/50/200 Çizgileri"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${toggles.ema ? "bg-cyan-400" : "bg-gray-600"}`} />
+            EMA
+          </button>
 
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#b0bec5" }} />
-          <span className="text-gray-300 font-semibold">EMA200</span>
-          {ind?.ema_200 && (
-            <span className="text-white/80 tabular-nums">{formatNumber(ind.ema_200)}</span>
-          )}
-        </div>
+          <button
+            onClick={() => setToggles((t) => ({ ...t, bb: !t.bb }))}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-medium transition-all cursor-pointer ${
+              toggles.bb
+                ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.25)]"
+                : "text-gray-400 hover:text-gray-200 border border-transparent"
+            }`}
+            title="Bollinger Bantları (Volatilite Kanalı)"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${toggles.bb ? "bg-purple-400" : "bg-gray-600"}`} />
+            BB
+          </button>
 
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-purple-400" />
-          <span className="text-purple-300 font-semibold">BB(20,2)</span>
-          {ind?.bb_upper && ind?.bb_lower && (
-            <span className="text-white/60 tabular-nums text-[10px]">
-              [{formatNumber(ind.bb_lower)} - {formatNumber(ind.bb_upper)}]
-            </span>
-          )}
+          <button
+            onClick={() => setToggles((t) => ({ ...t, vwap: !t.vwap }))}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-medium transition-all cursor-pointer ${
+              toggles.vwap
+                ? "bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40 shadow-[0_0_8px_rgba(217,70,239,0.25)]"
+                : "text-gray-400 hover:text-gray-200 border border-transparent"
+            }`}
+            title="Hacim Ağırlıklı Ortalama Fiyat (VWAP)"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${toggles.vwap ? "bg-fuchsia-400" : "bg-gray-600"}`} />
+            VWAP
+          </button>
+
+          <button
+            onClick={() => setToggles((t) => ({ ...t, signals: !t.signals }))}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-medium transition-all cursor-pointer ${
+              toggles.signals
+                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.25)]"
+                : "text-gray-400 hover:text-gray-200 border border-transparent"
+            }`}
+            title="Grafik Üzeri AL / SAT Okları"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${toggles.signals ? "bg-emerald-400" : "bg-gray-600"}`} />
+            Sinyaller
+          </button>
+
+          <button
+            onClick={() => setToggles((t) => ({ ...t, rsi: !t.rsi }))}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-medium transition-all cursor-pointer ${
+              toggles.rsi
+                ? "bg-violet-500/20 text-violet-300 border border-violet-500/40 shadow-[0_0_8px_rgba(139,92,246,0.25)]"
+                : "text-gray-400 hover:text-gray-200 border border-transparent"
+            }`}
+            title="RSI(14) Grafiği"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${toggles.rsi ? "bg-violet-400" : "bg-gray-600"}`} />
+            RSI
+          </button>
+
+          <button
+            onClick={() => setToggles((t) => ({ ...t, macd: !t.macd }))}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-medium transition-all cursor-pointer ${
+              toggles.macd
+                ? "bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-[0_0_8px_rgba(59,130,246,0.25)]"
+                : "text-gray-400 hover:text-gray-200 border border-transparent"
+            }`}
+            title="MACD Grafiği"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${toggles.macd ? "bg-blue-400" : "bg-gray-600"}`} />
+            MACD
+          </button>
         </div>
+      </div>
+
+      {/* Main Chart Canvas */}
+      <div className="relative flex-1 w-full min-h-[360px]">
+        <div ref={chartContainerRef} className="absolute inset-0" />
       </div>
     </div>
   );

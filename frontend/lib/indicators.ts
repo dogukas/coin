@@ -192,3 +192,91 @@ export function calculateMACD(candles: CandleData[], fast = 12, slow = 26, signa
 
   return { macdLine, signalLine, histogram };
 }
+
+/**
+ * Calculates Volume Weighted Average Price (VWAP)
+ */
+export function calculateVWAP(candles: CandleData[]): LinePoint[] {
+  if (!candles || candles.length === 0) return [];
+  const result: LinePoint[] = [];
+  let cumulativeTypicalVolume = 0;
+  let cumulativeVolume = 0;
+
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const typicalPrice = (c.high + c.low + c.close) / 3;
+    const vol = c.volume > 0 ? c.volume : 1;
+    cumulativeTypicalVolume += typicalPrice * vol;
+    cumulativeVolume += vol;
+
+    const vwap = cumulativeTypicalVolume / cumulativeVolume;
+    result.push({
+      time: c.time as Time,
+      value: Number(vwap.toFixed(4)),
+    });
+  }
+
+  return result;
+}
+
+export interface ChartSignalMarker {
+  time: Time;
+  position: "aboveBar" | "belowBar";
+  color: string;
+  shape: "arrowUp" | "arrowDown";
+  text: string;
+}
+
+/**
+ * Generates technical BUY/SELL markers for candlestick charts
+ */
+export function calculateSignalMarkers(candles: CandleData[]): ChartSignalMarker[] {
+  if (!candles || candles.length < 30) return [];
+  const markers: ChartSignalMarker[] = [];
+  const ema20 = calculateEMA(candles, 20);
+  const ema50 = calculateEMA(candles, 50);
+  const rsi = calculateRSI(candles, 14);
+
+  const ema20Map = new Map(ema20.map((p) => [p.time.toString(), p.value]));
+  const ema50Map = new Map(ema50.map((p) => [p.time.toString(), p.value]));
+  const rsiMap = new Map(rsi.map((p) => [p.time.toString(), p.value]));
+
+  let lastSignalIndex = -10;
+  for (let i = 1; i < candles.length; i++) {
+    const timeStr = candles[i].time.toString();
+    const prevTimeStr = candles[i - 1].time.toString();
+
+    const e20 = ema20Map.get(timeStr);
+    const e50 = ema50Map.get(timeStr);
+    const prevE20 = ema20Map.get(prevTimeStr);
+    const prevE50 = ema50Map.get(prevTimeStr);
+    const r = rsiMap.get(timeStr);
+
+    if (e20 && e50 && prevE20 && prevE50 && i - lastSignalIndex >= 8) {
+      // Golden Cross (EMA20 > EMA50) + not overbought
+      if (prevE20 <= prevE50 && e20 > e50 && (!r || r < 70)) {
+        markers.push({
+          time: candles[i].time as Time,
+          position: "belowBar",
+          color: "#00e676",
+          shape: "arrowUp",
+          text: "AL",
+        });
+        lastSignalIndex = i;
+      }
+      // Death Cross (EMA20 < EMA50) + not oversold
+      else if (prevE20 >= prevE50 && e20 < e50 && (!r || r > 30)) {
+        markers.push({
+          time: candles[i].time as Time,
+          position: "aboveBar",
+          color: "#ef5350",
+          shape: "arrowDown",
+          text: "SAT",
+        });
+        lastSignalIndex = i;
+      }
+    }
+  }
+
+  return markers;
+}

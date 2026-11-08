@@ -195,11 +195,11 @@ export function formatPercent(value: number): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
-export function formatNumber(value: number | null): string {
-  if (value === null) return "—";
+export function formatNumber(value: number | null, decimals = 2): string {
+  if (value === null || isNaN(value)) return "—";
   return value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
+    minimumFractionDigits: Math.min(2, decimals),
+    maximumFractionDigits: decimals,
   });
 }
 
