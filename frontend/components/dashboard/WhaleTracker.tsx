@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useDashboardStore } from "@/lib/store";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, formatVolume } from "@/lib/utils";
 import { Anchor } from "lucide-react";
 import type { TradeData } from "@/lib/utils";
 
@@ -10,12 +10,11 @@ interface WhaleTrade extends TradeData {
   value: number;
 }
 
-const WHALE_THRESHOLD_USD = 50000; // $50k+ is a whale
-
 export default function WhaleTracker() {
   const trades = useDashboardStore((s) => s.trades);
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   
+  const [minWhaleUsd, setMinWhaleUsd] = useState<number>(15000);
   const [whaleTrades, setWhaleTrades] = useState<WhaleTrade[]>([]);
   const [flashingId, setFlashingId] = useState<string | null>(null);
   const prevSymbolRef = useRef(activeSymbol);
@@ -33,17 +32,16 @@ export default function WhaleTracker() {
     const latestTrade = trades[0];
     const tradeValue = latestTrade.price * latestTrade.quantity;
     
-    // Only capture very large trades (Whales)
-    if (tradeValue >= WHALE_THRESHOLD_USD) {
+    // Capture large whale trades above selected threshold
+    if (tradeValue >= minWhaleUsd) {
       setWhaleTrades((prev) => {
-        // Avoid duplicates (checking by timestamp/price/quantity)
         const isDuplicate = prev.some(
           t => t.time === latestTrade.time && t.quantity === latestTrade.quantity
         );
         if (isDuplicate) return prev;
         
         const newTrade = { ...latestTrade, value: tradeValue };
-        return [newTrade, ...prev].slice(0, 15);
+        return [newTrade, ...prev].slice(0, 20);
       });
       
       // Flash effect
@@ -52,7 +50,7 @@ export default function WhaleTracker() {
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
       flashTimerRef.current = setTimeout(() => setFlashingId(null), 1000);
     }
-  }, [trades, activeSymbol]);
+  }, [trades, activeSymbol, minWhaleUsd]);
 
   useEffect(() => {
     return () => {
@@ -60,15 +58,58 @@ export default function WhaleTracker() {
     };
   }, []);
 
-  const cardClass = "min-w-0 bg-gradient-to-br from-[var(--card-2)] to-[var(--card)] border border-[var(--line)] rounded-[18px] p-4 flex flex-col gap-3 flex-1 min-h-[220px]";
-  const chClass = "flex items-center gap-2 min-h-[22px]";
+  // Son 50 işlemdeki toplam balina alım ve satım hacmi
+  let totalBuyUsd = 0;
+  let totalSellUsd = 0;
+  for (const t of trades) {
+    const val = t.price * t.quantity;
+    if (!t.is_buyer_maker) totalBuyUsd += val;
+    else totalSellUsd += val;
+  }
+  const netFlowUsd = totalBuyUsd - totalSellUsd;
+  const buyPct = totalBuyUsd + totalSellUsd > 0 ? (totalBuyUsd / (totalBuyUsd + totalSellUsd)) * 100 : 50;
+
+  const cardClass = "min-w-0 bg-gradient-to-br from-[var(--card-2)] to-[var(--card)] border border-[var(--line)] rounded-[18px] p-4 flex flex-col gap-3 flex-1 min-h-[240px]";
+  const chClass = "flex items-center justify-between gap-2 min-h-[22px] flex-wrap";
   const h2Class = "m-0 text-[11px] font-bold tracking-[0.12em] uppercase text-[var(--ink-dim)]";
 
   return (
     <section className={cardClass} aria-label="Balina Avcısı">
       <div className={chClass}>
-        <Anchor className="w-4 h-4 flex-none text-[#3b82f6]" strokeWidth={1.8} />
-        <h2 className={h2Class}>Balina Avcısı (+50K$)</h2>
+        <div className="flex items-center gap-2">
+          <Anchor className="w-4 h-4 flex-none text-[#3b82f6]" strokeWidth={1.8} />
+          <h2 className={h2Class}>Balina & Nakit Girişi</h2>
+        </div>
+
+        <div className="flex items-center gap-1 text-[10px] font-mono">
+          {[10000, 15000, 50000].map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setMinWhaleUsd(v)}
+              className={`px-1.5 py-0.5 rounded border cursor-pointer ${
+                minWhaleUsd === v
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold"
+                  : "bg-white/5 text-gray-400 border-white/10"
+              }`}
+            >
+              +${v / 1000}K
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Canlı Net Para Girişi Barı */}
+      <div className="p-2 rounded-xl bg-black/30 border border-white/10 flex flex-col gap-1.5 text-[10px] font-mono">
+        <div className="flex items-center justify-between">
+          <span className="text-gray-400 font-sans">Canlı Net Para Akışı:</span>
+          <strong className={netFlowUsd >= 0 ? "text-emerald-400" : "text-rose-400"}>
+            {netFlowUsd >= 0 ? "+" : "-"}${formatVolume(Math.abs(netFlowUsd))} (%{buyPct.toFixed(0)} Alıcı)
+          </strong>
+        </div>
+        <div className="w-full h-1.5 rounded-full bg-rose-500/40 overflow-hidden flex">
+          <div className="h-full bg-emerald-400 transition-all duration-300" style={{ width: `${buyPct}%` }} />
+        </div>
       </div>
 
       <div className="flex-1 overflow-hidden relative">

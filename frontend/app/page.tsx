@@ -44,6 +44,7 @@ import {
 
 import GlobalMarketPanel from "@/components/dashboard/GlobalMarketPanel";
 import AiCopilot from "@/components/dashboard/AiCopilot";
+import SmartMoneyInflowRadar from "@/components/dashboard/SmartMoneyInflowRadar";
 import ChartErrorBoundary from "@/components/charts/ChartErrorBoundary";
 
 // Dynamic import for chart (no SSR — requires browser APIs)
@@ -104,7 +105,7 @@ export default function DashboardPage() {
   const wsManagerRef = useRef<WSManager | null>(null);
 
   // Whale alert threshold — persisted in localStorage
-  const [whaleThreshold, setWhaleThreshold] = useState(100000);
+  const [whaleThreshold, setWhaleThreshold] = useState(25000);
 
   // Read persisted values AFTER mount (avoids SSR hydration mismatch)
   useEffect(() => {
@@ -492,6 +493,9 @@ export default function DashboardPage() {
         >
           {/* Main Panel (.main equivalent) */}
           <main className="flex flex-col gap-4 min-w-0">
+            {/* Canlı Sağlam Para Girişi & Balina Nakit Akışı Alarm Radarı */}
+            <SmartMoneyInflowRadar />
+
             {/* Aktif Coin Canlı Terminal Şeridi (Fiyat Flash + 24s Menzil + Sinyal) */}
             <ActiveCoinHeroStrip
               symbol={activeSymbol}

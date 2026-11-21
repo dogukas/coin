@@ -263,6 +263,7 @@ export function calculateSignalMarkers(candles: CandleData[]): ChartSignalMarker
           text: "AL",
         });
         lastSignalIndex = i;
+        continue;
       }
       // Death Cross (EMA20 < EMA50) + not oversold
       else if (prevE20 >= prevE50 && e20 < e50 && (!r || r > 30)) {
@@ -272,6 +273,33 @@ export function calculateSignalMarkers(candles: CandleData[]): ChartSignalMarker
           color: "#ef5350",
           shape: "arrowDown",
           text: "SAT",
+        });
+        lastSignalIndex = i;
+        continue;
+      }
+    }
+
+    // Sağlam Para Girişi (Whale Money Inflow) Mum İşaretleyicisi:
+    // Hacim son 20 mum ortalamasının >= 2.6 katı ve Alıcı Baskısı (taker_buy_volume) >= %68
+    if (i >= 20 && candles[i].close > candles[i].open) {
+      let sumVol = 0;
+      for (let k = i - 20; k < i; k++) {
+        sumVol += candles[k].volume;
+      }
+      const avgVol = sumVol / 20;
+      const cur = candles[i];
+      const buyRatio =
+        cur.volume > 0 && cur.taker_buy_volume !== undefined
+          ? cur.taker_buy_volume / cur.volume
+          : 0.5;
+
+      if (avgVol > 0 && cur.volume >= avgVol * 2.6 && buyRatio >= 0.68 && i - lastSignalIndex >= 5) {
+        markers.push({
+          time: cur.time as Time,
+          position: "belowBar",
+          color: "#38bdf8",
+          shape: "arrowUp",
+          text: "🐋 PARA GİRİŞİ",
         });
         lastSignalIndex = i;
       }

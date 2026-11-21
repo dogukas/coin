@@ -915,6 +915,19 @@ export default function CandlestickChart() {
     netCvdUsd += (buyVol - sellVol) * c.close;
   }
 
+  // Seçili veya canlı mumda Sağlam Para Girişi (Hacim Patlaması + Yüksek Alıcı Baskısı) kontrolü
+  const prior20Candles = candles.slice(-21, -1);
+  const avg20CandleVol =
+    prior20Candles.length > 0
+      ? prior20Candles.reduce((s, c) => s + c.volume, 0) / prior20Candles.length
+      : 0;
+  const inspectedVolSpikeMult =
+    inspectedCandle && avg20CandleVol > 0 ? inspectedCandle.volume / avg20CandleVol : 1.0;
+  const isHeavyMoneyEntering =
+    inspectedCandle !== null &&
+    ((inspectedVolSpikeMult >= 1.6 && candleBuyRatioPct >= 62) ||
+      (candleBuyRatioPct >= 68 && candleChangePct >= 0));
+
   const recent14 = candles.slice(-14);
   const avgRangePct =
     recent14.length > 0
@@ -1234,6 +1247,13 @@ export default function CandlestickChart() {
                   }`}
                 >
                   {candlePattern.icon} {candlePattern.name}
+                </span>
+              )}
+
+              {/* Grafik Üstü Anlık Sağlam Para Girişi Rozeti */}
+              {isHeavyMoneyEntering && (
+                <span className="px-2 py-0.5 rounded-md bg-emerald-400 text-black font-sans font-extrabold text-[9px] tracking-wide animate-pulse shadow-[0_0_12px_rgba(16,185,129,0.5)]">
+                  🚨 SAĞLAM PARA GİRİŞİ ({inspectedVolSpikeMult.toFixed(1)}x Hacim • %{candleBuyRatioPct.toFixed(0)} Alıcı)
                 </span>
               )}
             </div>
