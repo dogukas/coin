@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useDashboardStore } from "@/lib/store";
-import { getSignalLevel, type CandleData } from "@/lib/utils";
+import { formatNumber, formatVolume, getSignalLevel, type CandleData } from "@/lib/utils";
 import { buildSignalPayloadFromCandles } from "@/lib/indicators";
+import { runSignalBacktest } from "@/lib/chartAnalytics";
+import type { FuturesIntelPayload } from "@/app/api/market/futures/[symbol]/route";
 import { TrendingUp, TrendingDown, Minus, HelpCircle, Compass } from "lucide-react";
 
 const MTF_INTERVALS = ["1m", "5m", "15m", "1h", "4h"] as const;
@@ -28,8 +30,36 @@ export default function SignalCard() {
   const activeSymbol = useDashboardStore((s) => s.activeSymbol);
   const activeInterval = useDashboardStore((s) => s.activeInterval);
   const setChartInterval = useDashboardStore((s) => s.setInterval);
+  const candles = useDashboardStore((s) => s.candles);
 
   const [mtfMap, setMtfMap] = useState<Record<string, MtfItem>>({});
+  const [futuresIntel, setFuturesIntel] = useState<FuturesIntelPayload | null>(null);
+
+  // Binance Vadeli (Futures) Açık Pozisyon, Fonlama & Balina Long/Short Oranı
+  useEffect(() => {
+    let cancelled = false;
+    setFuturesIntel(null);
+
+    const loadFutures = async () => {
+      try {
+        const res = await fetch(`/api/market/futures/${activeSymbol}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as FuturesIntelPayload;
+        if (!cancelled) setFuturesIntel(data);
+      } catch {
+        // ignore
+      }
+    };
+
+    loadFutures();
+    const timer = window.setInterval(loadFutures, 25000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeSymbol]);
+
+  const backtestReport = runSignalBacktest(candles);
 
   // Çoklu Zaman Dilimi (1m, 5m, 15m, 1h, 4h) Canlı Sinyal Pusulası
   useEffect(() => {
@@ -287,6 +317,118 @@ export default function SignalCard() {
           })}
         </div>
       </section>
+
+      {/* 4. Binance Vadeli (Futures) Açık Pozisyon & Balina Long/Short İstihbaratı */}
+      {futuresIntel?.available && (
+        <section className="p-3 rounded-2xl bg-black/35 border border-amber-500/20 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold tracking-[0.06em] uppercase text-amber-300">
+              ⚡ Vadeli (Futures) & Balina L/S
+            </span>
+            <span
+              className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                futuresIntel.verdictTone === "SQUEEZE"
+                  ? "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/35"
+                  : futuresIntel.verdictTone === "BULL"
+                  ? "bg-[#2fd6a1]/15 text-[#2fd6a1] border-[#2fd6a1]/35"
+                  : futuresIntel.verdictTone === "BEAR"
+                  ? "bg-[#ff5a6e]/15 text-[#ff5a6e] border-[#ff5a6e]/35"
+                  : "bg-white/5 text-gray-300 border-white/10"
+              }`}
+            >
+              Fonlama: {futuresIntel.fundingRatePct >= 0 ? "+" : ""}
+              {futuresIntel.fundingRatePct.toFixed(4)}%
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+            <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5">
+              <div className="text-[9px] text-gray-400 font-sans">AÇIK POZİSYON (OI)</div>
+              <div className="text-xs font-bold text-cyan-300 tabular-nums">
+                ${formatVolume(futuresIntel.openInterestUsd)}
+              </div>
+              <div
+                className={`text-[9px] tabular-nums ${
+                  futuresIntel.oiChange15mPct >= 0 ? "text-emerald-400" : "text-rose-400"
+                }`}
+              >
+                15m Değişim: {futuresIntel.oiChange15mPct >= 0 ? "+" : ""}
+                {futuresIntel.oiChange15mPct.toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5">
+              <div className="text-[9px] text-gray-400 font-sans">🐋 BALİNA LONG / SHORT</div>
+              <div className="flex items-center justify-between text-xs font-bold tabular-nums">
+                <span className="text-emerald-400">%{futuresIntel.whaleLongPct.toFixed(0)} L</span>
+                <span className="text-rose-400">%{futuresIntel.whaleShortPct.toFixed(0)} S</span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-rose-500/40 overflow-hidden flex mt-1">
+                <div
+                  className="h-full bg-emerald-400"
+                  style={{ width: `${Math.min(100, Math.max(0, futuresIntel.whaleLongPct))}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="text-[10px] font-sans text-gray-300 px-2 py-1 rounded-lg bg-white/[0.02] border border-white/5">
+            {futuresIntel.verdictLabel}
+          </div>
+        </section>
+      )}
+
+      {/* 5. Canlı Sinyal Backtest (Kazanma Oranı Karnesi) */}
+      {backtestReport && (
+        <section className="p-3 rounded-2xl bg-black/35 border border-emerald-500/20 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold tracking-[0.06em] uppercase text-emerald-300">
+              🧪 Sinyal Backtest ({activeInterval})
+            </span>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 tabular-nums">
+              Win Rate: %{backtestReport.winRatePct.toFixed(0)} ({backtestReport.wins}K/{backtestReport.losses}Z)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono">
+            <div className="p-1.5 rounded-xl bg-white/[0.03] border border-white/5 text-center">
+              <div className="text-[9px] text-gray-400 font-sans">Net Getiri</div>
+              <strong
+                className={`tabular-nums ${
+                  backtestReport.netReturnPct >= 0 ? "text-emerald-400" : "text-rose-400"
+                }`}
+              >
+                {backtestReport.netReturnPct >= 0 ? "+" : ""}
+                {backtestReport.netReturnPct.toFixed(2)}%
+              </strong>
+            </div>
+            <div className="p-1.5 rounded-xl bg-white/[0.03] border border-white/5 text-center">
+              <div className="text-[9px] text-gray-400 font-sans">Profit Factor</div>
+              <strong className="text-cyan-300 tabular-nums">
+                {backtestReport.profitFactor.toFixed(2)}x
+              </strong>
+            </div>
+            <div className="p-1.5 rounded-xl bg-white/[0.03] border border-white/5 text-center">
+              <div className="text-[9px] text-gray-400 font-sans">Son Sinyal</div>
+              {backtestReport.activePosition ? (
+                <strong
+                  className={`tabular-nums ${
+                    backtestReport.activePosition.currentPnlPct >= 0
+                      ? "text-emerald-400"
+                      : "text-rose-400"
+                  }`}
+                >
+                  {backtestReport.activePosition.direction}{" "}
+                  {backtestReport.activePosition.currentPnlPct >= 0 ? "+" : ""}
+                  {backtestReport.activePosition.currentPnlPct.toFixed(1)}%
+                </strong>
+              ) : (
+                <strong className="text-gray-400">—</strong>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Balance Indicator */}
       <section className="flex flex-col gap-2">
